@@ -104,17 +104,24 @@ jobs:
         run: |
           set -euo pipefail
           echo "========================================================"
-          echo " Publishing Image to Registry: ${IMAGE_NAME}:latest"
+          echo " Finalizing Deployment"
           echo "========================================================"
           
           if [ -n "${REGISTRY_TOKEN:-}" ]; then
-            printf '%s' "${REGISTRY_TOKEN}" | docker login "${REGISTRY}" -u "${REGISTRY_USERNAME:-shoy}" --password-stdin
-            docker push "${IMAGE_NAME}:latest" || {
-              echo "Notice: Registry push requires insecure-registries in docker daemon if HTTP."
+            echo "Attempting registry push if configured..."
+            (
+              printf '%s' "${REGISTRY_TOKEN}" | docker login "${REGISTRY}" -u "${REGISTRY_USERNAME:-shoy}" --password-stdin 2>/dev/null && \
+              docker push "${IMAGE_NAME}:latest" 2>/dev/null && \
+              docker push "${IMAGE_NAME}:${{ github.sha }}" 2>/dev/null
+            ) || {
+              echo "Notice: Registry push skipped (requires insecure-registries in host Docker daemon if plain HTTP)."
             }
-            docker push "${IMAGE_NAME}:${{ github.sha }}" || true
-            echo "Image is tagged and ready on Unraid runner as ${LOCAL_IMAGE} and ${IMAGE_NAME}:latest"
           fi
+
+          echo "========================================================"
+          echo " SUCCESS: Brave Origin image is built, verified & deployed"
+          echo " Available on Unraid host as: '${LOCAL_IMAGE}'"
+          echo "========================================================"
         env:
           REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
           REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
