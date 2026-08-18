@@ -167,6 +167,11 @@ jobs:
           echo "Waiting 12 seconds for KasmVNC & Brave Origin startup..."
           sleep 12
 
+          echo "--- Diagnostic Debug of KASMPASSWD and curl in TEST 2 ---"
+          docker exec "${SMOKE_CONTAINER}" ls -la /config/kasmvnc/
+          docker exec "${SMOKE_CONTAINER}" cat /config/kasmvnc/.kasmpasswd || true
+          docker exec "${SMOKE_CONTAINER}" curl -k -i https://127.0.0.1:8443/ || true
+
           echo "--- Verifying Login Prompt (Unauthenticated Request) ---"
           UNAUTH_CODE=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -o /dev/null -w "%{http_code}" https://127.0.0.1:8443/)
           if [ "${UNAUTH_CODE}" = "401" ]; then
