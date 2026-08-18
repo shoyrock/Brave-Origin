@@ -102,37 +102,70 @@ jobs:
       - name: Deploy Image to Forgejo Container Registry
         shell: bash
         run: |
-          set -uo pipefail
           echo "========================================================"
           echo " Finalizing Deployment to Forgejo Registry"
           echo "========================================================"
           
           TOKEN="${REGISTRY_TOKEN:-${{ secrets.GITHUB_TOKEN }}}"
           USERNAME="${REGISTRY_USERNAME:-shoy}"
+          API_URL="http://192.168.10.10:3100/api/v1/repos/shoy/brave-origin/issues/1/comments"
           
-          echo "=== Docker Daemon Insecure Registries Info ==="
-          docker info 2>&1 | grep -i -A 10 "Insecure Registries" || true
+          LOG_FILE="/tmp/ci_deploy_diag.log"
+          {
+            echo "### CI Runner Deployment Diagnostics"
+            echo "**Runner User**: $(whoami) (UID: $(id -u), GID: $(id -g))"
+            echo ""
+            echo "#### Docker Info Insecure Registries:"
+            echo "\`\`\`text"
+            docker info 2>&1 | grep -i -A 10 "Insecure Registries" || echo "No insecure registries found in docker info"
+            echo "\`\`\`"
+            echo ""
+            echo "#### Testing Push Targets:"
+            
+            PUSH_SUCCESS="false"
+            for REG in "${REGISTRY}" "127.0.0.1:3100" "localhost:3100"; do
+              echo "**Target: ${REG}**"
+              echo "\`\`\`text"
+              echo "1. Attempting docker login to ${REG}..."
+              printf '%s' "${TOKEN}" | docker login "${REG}" -u "${USERNAME}" --password-stdin 2>&1 || true
+              
+              echo "2. Tagging image as ${REG}/shoy/brave-origin:latest..."
+              docker tag "${LOCAL_IMAGE}" "${REG}/shoy/brave-origin:latest"
+              
+              echo "3. Attempting docker push..."
+              if docker push "${REG}/shoy/brave-origin:latest" 2>&1; then
+                echo "PUSH RESULT: SUCCESS on ${REG}!"
+                PUSH_SUCCESS="true"
+                echo "\`\`\`"
+                break
+              else
+                echo "PUSH RESULT: FAILED on ${REG}"
+              fi
+              echo "\`\`\`"
+            done
+            
+            echo ""
+            echo "**Final Status**: PUSH_SUCCESS=${PUSH_SUCCESS}"
+          } > "${LOG_FILE}" 2>&1
 
+          # Post diagnostic log to Issue #1
           if [ -n "${TOKEN}" ]; then
-            echo "--- Attempting Login & Push to ${REGISTRY} ---"
-            printf '%s' "${TOKEN}" | docker login "${REGISTRY}" -u "${USERNAME}" --password-stdin
-            
-            echo "Pushing ${IMAGE_NAME}:latest..."
-            docker push "${IMAGE_NAME}:latest"
-            
-            echo "Pushing ${IMAGE_NAME}:${{ github.sha }}..."
-            docker push "${IMAGE_NAME}:${{ github.sha }}"
-            
-            echo "=== Image successfully published to Forgejo Container Registry! ==="
-          else
-            echo "Warning: No registry token provided. Skipping push."
+            JSON_PAYLOAD=$(python3 -c "import json, sys; print(json.dumps({'body': open('${LOG_FILE}').read()}))" 2>/dev/null || jq -Rs '{body: .}' "${LOG_FILE}" 2>/dev/null || echo "{\"body\": \"log read failed\"}")
+            curl -s -X POST -H "Authorization: token ${TOKEN}" -H "Content-Type: application/json" -d "${JSON_PAYLOAD}" "${API_URL}" || true
           fi
 
-          echo "========================================================"
-          echo " SUCCESS: Brave Origin image is built, verified & deployed"
-          echo " Available on Unraid host as: '${LOCAL_IMAGE}'"
-          echo " Available in Registry as: '${IMAGE_NAME}:latest'"
-          echo "========================================================"
+          cat "${LOG_FILE}"
+          
+          if [ "${PUSH_SUCCESS}" != "true" ]; then
+            echo "========================================================"
+            echo " WARNING: Registry push could not complete automatically."
+            echo " Check diagnostics in Issue #1."
+            echo "========================================================"
+          else
+            echo "========================================================"
+            echo " SUCCESS: Brave Origin image published to Forgejo Registry!"
+            echo "========================================================"
+          fi
         env:
           REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
           REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
