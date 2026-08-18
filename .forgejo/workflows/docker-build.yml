@@ -134,7 +134,8 @@ jobs:
           HTTP_CODE_AFTER_PASSWD=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -o /dev/null -w "%{http_code}" https://127.0.0.1:8443/)
           [ "${HTTP_CODE_AFTER_PASSWD}" = "200" ] && echo "TEST 1 Existing .kasmpasswd does not trigger auth: SUCCESS"
 
-          docker rm -f "${SMOKE_CONTAINER}"
+          docker stop -t 5 "${SMOKE_CONTAINER}" >/dev/null 2>&1 || true
+          docker rm "${SMOKE_CONTAINER}" >/dev/null 2>&1 || true
 
           echo "========================================================"
           echo " REGRESSION TEST 2: Authentication Enabled (KASM_AUTH_ENABLED=true)"
@@ -181,7 +182,8 @@ jobs:
 
           [ -d "${TEST_DIR}/profile" ] && echo "TEST 3 /config/profile persistent: SUCCESS"
 
-          docker rm -f "${SMOKE_CONTAINER}"
+          docker stop -t 5 "${SMOKE_CONTAINER}" >/dev/null 2>&1 || true
+          docker rm "${SMOKE_CONTAINER}" >/dev/null 2>&1 || true
 
           echo "========================================================"
           echo " REGRESSION TEST 4: Switch Back to Authentication Disabled"

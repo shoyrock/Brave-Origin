@@ -184,12 +184,11 @@ check_config_disk_space() {
 # 7. Safe Stale Singleton Cleanup (Only when all 4 conditions met)
 safe_clean_singleton_artifacts() {
     # 1. flock on profile.lock must be held (caller verifies)
-    # 2. No supervisor-tracked Brave PID
-    # 3. No active child Brave process in container
-    local active_brave_pids
-    active_brave_pids=$(pgrep -u "$(id -u)" -f "brave" 2>/dev/null | grep -v "^$$$" || true)
+    # 2. No active browser process running in container
+    local active_browser_pids
+    active_browser_pids=$(pgrep -f "/opt/brave.com/brave-origin/brave" 2>/dev/null || true)
 
-    if [ -z "${active_brave_pids}" ]; then
+    if [ -z "${active_browser_pids}" ]; then
         if [ -e "${PROFILE_DIR}/SingletonLock" ] || [ -e "${PROFILE_DIR}/SingletonSocket" ] || [ -e "${PROFILE_DIR}/SingletonCookie" ]; then
             echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Stale Chromium singleton artifacts safely removed (profile lock acquired, no active browser process)."
             rm -f "${PROFILE_DIR}/SingletonLock" "${PROFILE_DIR}/SingletonSocket" "${PROFILE_DIR}/SingletonCookie" 2>/dev/null || true
