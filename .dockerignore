@@ -1,0 +1,9 @@
+.git
+.env
+config/profile/
+config/downloads/
+config/kasmvnc/
+config/state/
+appdata/
+*.log
+scratch/

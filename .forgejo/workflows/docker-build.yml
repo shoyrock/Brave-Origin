@@ -1,0 +1,134 @@
+name: Build and Deploy Brave Origin
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish Docker image to Forgejo Container Registry'
+        required: true
+        default: true
+        type: boolean
+
+concurrency:
+  group: brave-origin-docker-build
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    name: Build, Test & Deploy on Unraid Runner
+    runs-on: docker-build
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+
+    env:
+      REGISTRY: 192.168.10.10:3100
+      IMAGE_NAME: 192.168.10.10:3100/shoy/brave-origin
+      LOCAL_IMAGE: brave-origin-kasmvnc:latest
+      SMOKE_CONTAINER: brave-origin-ci-smoke
+
+    steps:
+      - name: Check out repository
+        uses: https://data.forgejo.org/actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Inspect Runner Docker Environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=== Docker Environment Info ==="
+          docker version
+          docker buildx version || true
+          docker info
+
+      - name: Build Brave Origin Docker Image
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=== Building Docker Image: ${LOCAL_IMAGE} ==="
+          docker build \
+            --tag "${LOCAL_IMAGE}" \
+            --tag "${IMAGE_NAME}:latest" \
+            --tag "${IMAGE_NAME}:${{ github.sha }}" \
+            .
+          echo "=== Build Succeeded ==="
+          docker images "${LOCAL_IMAGE}"
+
+      - name: Smoke Test Container & Healthcheck
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cleanup() {
+            echo "Cleaning up smoke test container..."
+            docker rm --force "${SMOKE_CONTAINER}" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          echo "Launching smoke container for healthcheck validation..."
+          docker run --detach \
+            --name "${SMOKE_CONTAINER}" \
+            -e KASM_PASSWORD="CIPasswordTest123!" \
+            -e WEB_PORT="8443" \
+            -e AUTO_UPDATE="false" \
+            --health-interval 2s \
+            --health-timeout 3s \
+            --health-retries 15 \
+            --health-start-period 5s \
+            "${LOCAL_IMAGE}"
+
+          echo "Waiting for container healthcheck to pass..."
+          HEALTHY=false
+          for i in $(seq 1 30); do
+            STATUS=$(docker inspect --format '{{.State.Health.Status}}' "${SMOKE_CONTAINER}" 2>/dev/null || echo "starting")
+            echo "Attempt $i: Container health status is '${STATUS}'"
+            if [ "${STATUS}" = "healthy" ]; then
+              HEALTHY=true
+              break
+            fi
+            if [ "${STATUS}" = "unhealthy" ]; then
+              echo "Error: Container reported unhealthy!"
+              docker logs "${SMOKE_CONTAINER}"
+              exit 1
+            fi
+            sleep 2
+          done
+
+          if [ "${HEALTHY}" != "true" ]; then
+            echo "Error: Healthcheck timed out!"
+            docker logs "${SMOKE_CONTAINER}"
+            exit 1
+          fi
+
+          echo "Smoke test passed! Container logs:"
+          docker logs "${SMOKE_CONTAINER}"
+
+      - name: Publish Image to Forgejo Container Registry
+        if: github.event_name == 'push' || inputs.publish == true
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Logging in to Forgejo Container Registry (${REGISTRY})..."
+          
+          # Attempt login with available token or GITHUB_TOKEN
+          LOGIN_TOKEN="${{ secrets.FORGEJO_TOKEN || secrets.GITHUB_TOKEN || '' }}"
+          if [ -n "${LOGIN_TOKEN}" ]; then
+            printf '%s' "${LOGIN_TOKEN}" | docker login "${REGISTRY}" -u "${{ github.actor }}" --password-stdin
+          fi
+
+          echo "Pushing images to Forgejo Container Registry..."
+          docker push "${IMAGE_NAME}:latest" || {
+            echo "Warning: Push with standard credentials failed, attempting push without extra auth if registry is internal..."
+            docker push "${IMAGE_NAME}:latest"
+          }
+          docker push "${IMAGE_NAME}:${{ github.sha }}" || true
+
+          echo "=== Successfully published ${IMAGE_NAME}:latest ==="

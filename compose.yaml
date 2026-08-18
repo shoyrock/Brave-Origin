@@ -1,0 +1,43 @@
+services:
+  brave-origin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BRAVE_ORIGIN_VERSION: ${BRAVE_ORIGIN_VERSION:-latest}
+    image: brave-origin-kasmvnc:latest
+    container_name: brave-origin
+    hostname: ${CONTAINER_HOSTNAME:-brave-origin}
+    restart: unless-stopped
+    shm_size: "1gb"
+    ports:
+      - "${WEB_PORT:-8443}:${WEB_PORT:-8443}"
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - UMASK=${UMASK:-022}
+      - TZ=${TZ:-UTC}
+      - WEB_PORT=${WEB_PORT:-8443}
+      - DISPLAY_WIDTH=${DISPLAY_WIDTH:-1920}
+      - DISPLAY_HEIGHT=${DISPLAY_HEIGHT:-1080}
+      - KASM_USER=${KASM_USER:-brave}
+      - KASM_PASSWORD=${KASM_PASSWORD:-}
+      - KASM_PASSWORD_FILE=${KASM_PASSWORD_FILE:-}
+      - AUTO_UPDATE=${AUTO_UPDATE:-true}
+      - UPDATE_INTERVAL=${UPDATE_INTERVAL:-21600}
+      - DOWNGRADE_RETRY_INTERVAL=${DOWNGRADE_RETRY_INTERVAL:-300}
+      - MIN_UPDATE_FREE_SPACE_MB=${MIN_UPDATE_FREE_SPACE_MB:-1024}
+      - BRAVE_STARTUP_TIMEOUT=${BRAVE_STARTUP_TIMEOUT:-15}
+      - BRAVE_ORIGIN_VERSION=${BRAVE_ORIGIN_VERSION:-latest}
+      - ENABLE_GPU=${ENABLE_GPU:-true}
+      - ENABLE_AUDIO=${ENABLE_AUDIO:-true}
+      - DRI_NODE=${DRI_NODE:-/dev/dri/renderD128}
+      - BRAVE_FLAGS=${BRAVE_FLAGS:-}
+    volumes:
+      - ${CONFIG_PATH:-./appdata}:/config
+    healthcheck:
+      test: ["CMD-SHELL", "curl -k -fsS https://127.0.0.1:${WEB_PORT:-8443}/ >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

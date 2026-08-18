@@ -1,0 +1,11 @@
+# ==============================================================================
+# Optional Docker Compose Override: Intel / AMD GPU Hardware Acceleration
+# ==============================================================================
+# Usage on Linux / Unraid hosts with available /dev/dri devices:
+#   docker compose -f compose.yaml -f compose.gpu.yaml up -d
+# ==============================================================================
+
+services:
+  brave-origin:
+    devices:
+      - /dev/dri:/dev/dri
