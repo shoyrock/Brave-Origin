@@ -60,6 +60,10 @@ RUN set -eux; \
         chown root:root /opt/brave.com/brave-origin/chrome-sandbox; \
         chmod 4755 /opt/brave.com/brave-origin/chrome-sandbox; \
     fi; \
+    if [ -f /opt/brave.com/brave-origin/apparmor.d/brave-origin-stable ]; then \
+        mkdir -p /etc/apparmor.d; \
+        cp /opt/brave.com/brave-origin/apparmor.d/brave-origin-stable /etc/apparmor.d/brave-origin; \
+    fi; \
     # 3. Download, validate, and install verified official KasmVNC release asset for Debian Trixie
     ARCH="$(dpkg --print-architecture)"; \
     KASMVNC_DEB="kasmvncserver_trixie_${KASMVNC_VERSION}_${ARCH}.deb"; \

@@ -95,6 +95,7 @@ jobs:
           docker run --detach \
             --name "${SMOKE_CONTAINER}" \
             --shm-size=1g \
+            --security-opt seccomp=unconfined \
             -e WEB_PORT="8443" \
             -e AUTO_UPDATE="false" \
             -e ENABLE_GPU="false" \
