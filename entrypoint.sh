@@ -14,6 +14,10 @@ TZ="${TZ:-UTC}"
 WEB_PORT="${WEB_PORT:-8443}"
 DISPLAY_WIDTH="${DISPLAY_WIDTH:-1920}"
 DISPLAY_HEIGHT="${DISPLAY_HEIGHT:-1080}"
+KASM_AUTH_ENABLED="${KASM_AUTH_ENABLED:-false}"
+KASM_USER="${KASM_USER:-brave}"
+KASM_PASSWORD="${KASM_PASSWORD:-}"
+KASM_PASSWORD_FILE="${KASM_PASSWORD_FILE:-}"
 AUTO_UPDATE="${AUTO_UPDATE:-true}"
 UPDATE_INTERVAL="${UPDATE_INTERVAL:-21600}"
 DOWNGRADE_RETRY_INTERVAL="${DOWNGRADE_RETRY_INTERVAL:-300}"
@@ -27,7 +31,17 @@ DRI_NODE="${DRI_NODE:-/dev/dri/renderD128}"
 # Apply user-configured file creation mask
 umask "${UMASK}"
 
-export PUID PGID UMASK TZ WEB_PORT DISPLAY_WIDTH DISPLAY_HEIGHT
+# Strict parsing of KASM_AUTH_ENABLED (accept true/false case-insensitively)
+KASM_AUTH_ENABLED_LOWER="$(echo "${KASM_AUTH_ENABLED}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+if [ "${KASM_AUTH_ENABLED_LOWER}" != "true" ] && [ "${KASM_AUTH_ENABLED_LOWER}" != "false" ]; then
+    echo "================================================================================" >&2
+    echo "[kasmvnc] ERROR: Invalid KASM_AUTH_ENABLED value '${KASM_AUTH_ENABLED}'!" >&2
+    echo "Valid options are 'true' or 'false'." >&2
+    echo "================================================================================" >&2
+    exit 1
+fi
+
+export PUID PGID UMASK TZ WEB_PORT DISPLAY_WIDTH DISPLAY_HEIGHT KASM_AUTH_ENABLED
 export AUTO_UPDATE UPDATE_INTERVAL DOWNGRADE_RETRY_INTERVAL MIN_UPDATE_FREE_SPACE_MB
 export BRAVE_STARTUP_TIMEOUT BRAVE_ORIGIN_VERSION ENABLE_GPU ENABLE_AUDIO DRI_NODE
 export HOME=/config
@@ -77,8 +91,8 @@ if [ -f "/config/.last-brave-version" ] && [ ! -f "/config/state/last-brave-vers
     mv -f "/config/.last-brave-version" "/config/state/last-brave-version" 2>/dev/null || true
 fi
 
-# Remove legacy credentials files if previously generated
-rm -f /config/kasmvnc/credentials.txt /config/kasmvnc/.kasmpasswd /config/.kasmpasswd 2>/dev/null || true
+# Remove legacy plaintext credentials file if previously generated (preserving .kasmpasswd)
+rm -f /config/kasmvnc/credentials.txt 2>/dev/null || true
 
 rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 /tmp/*.pid /tmp/*.flag /run/lock/brave-origin-update.lock 2>/dev/null || true
 
@@ -105,11 +119,67 @@ if [ ! -f "${CERT_FILE}" ] || [ ! -f "${KEY_FILE}" ]; then
     chmod 600 "${KEY_FILE}" "${CERT_FILE}"
 fi
 
-# 6. Passwordless KasmVNC Internal Credential Initialization
+# 6. KasmVNC Authentication Setup
 KASMPASSWD_FILE="/config/kasmvnc/.kasmpasswd"
-if [ ! -f "${KASMPASSWD_FILE}" ]; then
-    printf "nopassword\nnopassword\n" | kasmvncpasswd -u default -rwo "${KASMPASSWD_FILE}" >/dev/null 2>&1 || true
-    chmod 600 "${KASMPASSWD_FILE}" 2>/dev/null || true
+
+if [ "${KASM_AUTH_ENABLED_LOWER}" = "true" ]; then
+    echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Authentication mode: ENABLED"
+    
+    # Credential precedence:
+    # 1. KASM_PASSWORD_FILE if explicitly configured and readable
+    # 2. KASM_PASSWORD if explicitly configured
+    # 3. Existing /config/kasmvnc/.kasmpasswd
+    if [ -n "${KASM_PASSWORD_FILE}" ]; then
+        if [ -f "${KASM_PASSWORD_FILE}" ]; then
+            KASM_PASSWORD="$(cat "${KASM_PASSWORD_FILE}" 2>/dev/null || echo "")"
+            if [ -z "${KASM_PASSWORD}" ]; then
+                echo "================================================================================" >&2
+                echo "[kasmvnc] ERROR: KASM_PASSWORD_FILE (${KASM_PASSWORD_FILE}) is empty or unreadable!" >&2
+                echo "================================================================================" >&2
+                exit 1
+            fi
+            echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Configuring credentials for user '${KASM_USER}' from secret file..."
+            printf "%s\n%s\n" "${KASM_PASSWORD}" "${KASM_PASSWORD}" | \
+                kasmvncpasswd -u "${KASM_USER}" -rwo "${KASMPASSWD_FILE}" >/dev/null 2>&1
+            chmod 600 "${KASMPASSWD_FILE}" 2>/dev/null || true
+        else
+            echo "================================================================================" >&2
+            echo "[kasmvnc] ERROR: Configured KASM_PASSWORD_FILE (${KASM_PASSWORD_FILE}) not found inside container!" >&2
+            echo "Ensure host secret file is mounted into the container at this path." >&2
+            echo "================================================================================" >&2
+            exit 1
+        fi
+    elif [ -n "${KASM_PASSWORD}" ]; then
+        echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Configuring credentials for user '${KASM_USER}' from environment variable..."
+        printf "%s\n%s\n" "${KASM_PASSWORD}" "${KASM_PASSWORD}" | \
+            kasmvncpasswd -u "${KASM_USER}" -rwo "${KASMPASSWD_FILE}" >/dev/null 2>&1
+        chmod 600 "${KASMPASSWD_FILE}" 2>/dev/null || true
+    elif [ -f "${KASMPASSWD_FILE}" ]; then
+        echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Using existing credentials from ${KASMPASSWD_FILE}."
+        chmod 600 "${KASMPASSWD_FILE}" 2>/dev/null || true
+    else
+        echo "================================================================================" >&2
+        echo "[kasmvnc] ERROR: KASM_AUTH_ENABLED=true but no authentication credentials exist!" >&2
+        echo "" >&2
+        echo "To configure credentials, choose one of the following methods:" >&2
+        echo "" >&2
+        echo "1. Set KASM_PASSWORD_FILE pointing to a mounted secret file inside container (Recommended):" >&2
+        echo "   KASM_PASSWORD_FILE=/run/secrets/kasm_password" >&2
+        echo "" >&2
+        echo "2. Set KASM_PASSWORD in your environment / .env file:" >&2
+        echo "   KASM_PASSWORD=MySecurePassword123!" >&2
+        echo "" >&2
+        echo "3. Or generate credentials interactively before starting the container:" >&2
+        echo "   docker compose run --rm brave-origin /usr/local/bin/reset-password.sh --generate" >&2
+        echo "================================================================================" >&2
+        exit 1
+    fi
+else
+    echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Authentication mode: DISABLED (Network-Level Protection)"
+    if [ ! -f "${KASMPASSWD_FILE}" ]; then
+        printf "nopassword\nnopassword\n" | kasmvncpasswd -u default -rwo "${KASMPASSWD_FILE}" >/dev/null 2>&1 || true
+        chmod 600 "${KASMPASSWD_FILE}" 2>/dev/null || true
+    fi
 fi
 
 # 7. Configure KasmVNC YAML Settings (Explicit Port, Resolution & Encoding)
@@ -237,20 +307,29 @@ trap cleanup SIGTERM SIGINT SIGHUP SIGQUIT
 echo "========================================================"
 echo " Brave Origin KasmVNC Server Ready!"
 echo " URL:                 https://localhost:${WEB_PORT}"
-echo " Authentication:      Disabled (Network-Level Protection)"
+if [ "${KASM_AUTH_ENABLED_LOWER}" = "true" ]; then
+    echo " Authentication:      Enabled (HTTP Basic Auth, User: ${KASM_USER})"
+else
+    echo " Authentication:      Disabled (Network-Level Protection)"
+fi
 echo " Installed Version:   ${INSTALLED_BRAVE}"
 echo " Profile Version:     ${LAST_RECORDED_VER:-None (new profile)}"
 echo " Update Interval:     ${UPDATE_INTERVAL}s (Downgrade Recovery: ${DOWNGRADE_RETRY_INTERVAL}s)"
 echo "========================================================"
 
 # 13. Drop privileges and start KasmVNC server
-echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Launching KasmVNC on display :1 (HTTPS port ${WEB_PORT}, -disableBasicAuth)..."
-exec gosu braveuser vncserver :1 \
-    -config /config/kasmvnc/kasmvnc.yaml \
-    -geometry "${DISPLAY_WIDTH}x${DISPLAY_HEIGHT}" \
-    -depth 24 \
-    -websocketPort "${WEB_PORT}" \
-    -disableBasicAuth \
-    -SecurityTypes None \
-    -xstartup /usr/local/bin/start-session.sh \
+VNC_OPTS=(
+    -config /config/kasmvnc/kasmvnc.yaml
+    -geometry "${DISPLAY_WIDTH}x${DISPLAY_HEIGHT}"
+    -depth 24
+    -websocketPort "${WEB_PORT}"
+    -xstartup /usr/local/bin/start-session.sh
     -fg
+)
+
+if [ "${KASM_AUTH_ENABLED_LOWER}" = "false" ]; then
+    VNC_OPTS+=("-disableBasicAuth" "-SecurityTypes" "None")
+fi
+
+echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Launching KasmVNC on display :1 (HTTPS port ${WEB_PORT}, Auth: ${KASM_AUTH_ENABLED_LOWER})..."
+exec gosu braveuser vncserver :1 "${VNC_OPTS[@]}"

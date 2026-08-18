@@ -90,15 +90,46 @@ Copy the example environment file:
 cp .env.example .env
 ```
 
-Edit `.env` to configure your storage location, username, or port:
+Edit `.env` to configure your storage location, authentication mode, or web port:
 
+#### Option A: Passwordless Access (Default)
 ```ini
 CONFIG_PATH=./appdata
 # Example for Unraid OS deployments:
 # CONFIG_PATH=/mnt/user/appdata/brave-origin
 
 WEB_PORT=8443
+KASM_AUTH_ENABLED=false
 ```
+
+> [!WARNING]
+> When `KASM_AUTH_ENABLED=false`, anyone who can reach the exposed KasmVNC port can control the browser session. Use this mode on private, trusted local networks.
+
+#### Option B: Authentication Enabled with Environment Password
+```ini
+CONFIG_PATH=./appdata
+WEB_PORT=8443
+KASM_AUTH_ENABLED=true
+KASM_USER=brave
+KASM_PASSWORD=example-password
+```
+
+#### Option C: Authentication Enabled with Mounted Secret (Recommended)
+Storing passwords in a mounted Docker secret file inside the container is preferable to storing plaintext passwords directly in container environment variables or `.env`:
+```ini
+CONFIG_PATH=./appdata
+WEB_PORT=8443
+KASM_AUTH_ENABLED=true
+KASM_USER=brave
+KASM_PASSWORD_FILE=/run/secrets/kasm_password
+```
+
+#### First-Boot Interactive Password Initialization
+If `KASM_AUTH_ENABLED=true` and you prefer not to write passwords in `.env`, initialize credentials interactively before startup:
+```bash
+docker compose run --rm brave-origin /usr/local/bin/reset-password.sh --generate
+```
+This stores the credentials in `/config/kasmvnc/.kasmpasswd` (mode `0600`). You can also run `reset-password.sh` while authentication is disabled without automatically enabling authentication.
 
 ### 3. Build & Launch
 
@@ -123,7 +154,10 @@ https://localhost:8443
 *(If accessing from another device on your network, use `https://<HOST-IP>:8443`)*
 
 > [!NOTE]
-> Because KasmVNC generates a self-signed TLS certificate by default, your browser will display a certificate warning on first visit. Accept the certificate to access the desktop directly (Basic Authentication is disabled for local network deployment).
+> Because KasmVNC generates a self-signed TLS certificate by default, your browser will display a certificate warning on first visit. Accept the certificate to proceed. If `KASM_AUTH_ENABLED=true`, enter your `KASM_USER` and password; if `false`, you will connect directly to the browser session.
+
+> [!NOTE]
+> **AppArmor Host Enforcement**: Placing an AppArmor profile in `/etc/apparmor.d` within the container provides the package profile definition, but AppArmor security profile enforcement is strictly evaluated by the host Linux kernel. Containerized applications rely on standard unprivileged user namespaces and host daemon configuration for containment.
 
 ---
 
@@ -253,6 +287,10 @@ Chromium profiles undergo irreversible database migrations (SQLite schemas, Leve
 | `CONFIG_PATH` | `./appdata` | Host persistent directory path (supports local folders or `/mnt/user/appdata/brave-origin`) |
 | `CONTAINER_HOSTNAME` | `brave-origin` | Stable container hostname to prevent singleton identity churn |
 | `WEB_PORT` | `8443` | Host port mapped to KasmVNC HTTPS interface |
+| `KASM_AUTH_ENABLED` | `false` | Enable HTTP Basic Auth login prompt (`false` for passwordless access) |
+| `KASM_USER` | `brave` | Username for KasmVNC login when `KASM_AUTH_ENABLED=true` |
+| `KASM_PASSWORD` | `""` | Password for KasmVNC login when `KASM_AUTH_ENABLED=true` |
+| `KASM_PASSWORD_FILE` | `""` | Path to container-mounted secret file containing login password |
 | `PUID` | `1000` | Host User ID mapped to container user (`99` for Unraid, `1000` for standard Linux) |
 | `PGID` | `1000` | Host Group ID mapped to container user (`100` for Unraid, `1000` for standard Linux) |
 | `UMASK` | `022` | File creation mask for persistent files |
