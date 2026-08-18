@@ -15,13 +15,13 @@ on:
 
 concurrency:
   group: brave-origin-docker-build
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build-and-deploy:
     name: Build, Test & Deploy on Unraid Runner
     runs-on: docker-build
-    timeout-minutes: 60
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
