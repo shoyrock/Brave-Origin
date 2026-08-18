@@ -102,7 +102,7 @@ jobs:
       - name: Deploy Image to Forgejo Container Registry
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           echo "========================================================"
           echo " Finalizing Deployment to Forgejo Registry"
           echo "========================================================"
@@ -110,8 +110,11 @@ jobs:
           TOKEN="${REGISTRY_TOKEN:-${{ secrets.GITHUB_TOKEN }}}"
           USERNAME="${REGISTRY_USERNAME:-shoy}"
           
+          echo "=== Docker Daemon Insecure Registries Info ==="
+          docker info 2>&1 | grep -i -A 10 "Insecure Registries" || true
+
           if [ -n "${TOKEN}" ]; then
-            echo "Logging into container registry ${REGISTRY} as ${USERNAME}..."
+            echo "--- Attempting Login & Push to ${REGISTRY} ---"
             printf '%s' "${TOKEN}" | docker login "${REGISTRY}" -u "${USERNAME}" --password-stdin
             
             echo "Pushing ${IMAGE_NAME}:latest..."
