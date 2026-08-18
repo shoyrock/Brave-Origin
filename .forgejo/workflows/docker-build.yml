@@ -122,17 +122,29 @@ jobs:
 
           echo "--- Verifying Unauthenticated Mode ---"
           HTTP_CODE=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -o /dev/null -w "%{http_code}" https://127.0.0.1:8443/)
-          [ "${HTTP_CODE}" = "200" ] && echo "TEST 1 HTTP Code 200 without login prompt: SUCCESS"
+          if [ "${HTTP_CODE}" = "200" ]; then
+            echo "TEST 1 HTTP Code 200 without login prompt: SUCCESS"
+          else
+            echo "TEST 1 Failed: HTTP code was ${HTTP_CODE}" >&2; exit 1
+          fi
           
           STATUS=$(docker exec "${SMOKE_CONTAINER}" cat /config/state/status)
-          [ "${STATUS}" = "RUNNING" ] && echo "TEST 1 Status RUNNING: SUCCESS"
+          if [ "${STATUS}" = "RUNNING" ]; then
+            echo "TEST 1 Status RUNNING: SUCCESS"
+          else
+            echo "TEST 1 Failed: Status was ${STATUS}" >&2; exit 1
+          fi
 
           echo "--- Setting Persistent Credentials with reset-password.sh ---"
           docker exec "${SMOKE_CONTAINER}" /usr/local/bin/reset-password.sh "TestSecretPassword123!"
 
           echo "--- Verifying existing credentials do NOT activate auth while KASM_AUTH_ENABLED=false ---"
           HTTP_CODE_AFTER_PASSWD=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -o /dev/null -w "%{http_code}" https://127.0.0.1:8443/)
-          [ "${HTTP_CODE_AFTER_PASSWD}" = "200" ] && echo "TEST 1 Existing .kasmpasswd does not trigger auth: SUCCESS"
+          if [ "${HTTP_CODE_AFTER_PASSWD}" = "200" ]; then
+            echo "TEST 1 Existing .kasmpasswd does not trigger auth: SUCCESS"
+          else
+            echo "TEST 1 Failed: HTTP code after password was ${HTTP_CODE_AFTER_PASSWD}" >&2; exit 1
+          fi
 
           docker stop -t 5 "${SMOKE_CONTAINER}" >/dev/null 2>&1 || true
           docker rm "${SMOKE_CONTAINER}" >/dev/null 2>&1 || true
@@ -157,18 +169,34 @@ jobs:
 
           echo "--- Verifying Login Prompt (Unauthenticated Request) ---"
           UNAUTH_CODE=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -o /dev/null -w "%{http_code}" https://127.0.0.1:8443/)
-          [ "${UNAUTH_CODE}" = "401" ] && echo "TEST 2 Unauthenticated request returns 401 prompt: SUCCESS"
+          if [ "${UNAUTH_CODE}" = "401" ]; then
+            echo "TEST 2 Unauthenticated request returns 401 prompt: SUCCESS"
+          else
+            echo "TEST 2 Failed: Unauthenticated request returned ${UNAUTH_CODE}" >&2; exit 1
+          fi
 
           echo "--- Verifying Incorrect Password Rejection ---"
           BAD_AUTH_CODE=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -o /dev/null -w "%{http_code}" -u brave:WrongPassword https://127.0.0.1:8443/)
-          [ "${BAD_AUTH_CODE}" = "401" ] && echo "TEST 2 Incorrect password rejected (401): SUCCESS"
+          if [ "${BAD_AUTH_CODE}" = "401" ]; then
+            echo "TEST 2 Incorrect password rejected (401): SUCCESS"
+          else
+            echo "TEST 2 Failed: Bad auth returned ${BAD_AUTH_CODE}" >&2; exit 1
+          fi
 
           echo "--- Verifying Correct Password Acceptance ---"
           GOOD_AUTH_CODE=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -o /dev/null -w "%{http_code}" -u brave:TestSecretPassword123! https://127.0.0.1:8443/)
-          [ "${GOOD_AUTH_CODE}" = "200" ] && echo "TEST 2 Correct password accepted (200): SUCCESS"
+          if [ "${GOOD_AUTH_CODE}" = "200" ]; then
+            echo "TEST 2 Correct password accepted (200): SUCCESS"
+          else
+            echo "TEST 2 Failed: Good auth returned ${GOOD_AUTH_CODE}" >&2; exit 1
+          fi
 
           AUTH_STATUS=$(docker exec "${SMOKE_CONTAINER}" cat /config/state/status)
-          [ "${AUTH_STATUS}" = "RUNNING" ] && echo "TEST 2 Status RUNNING: SUCCESS"
+          if [ "${AUTH_STATUS}" = "RUNNING" ]; then
+            echo "TEST 2 Status RUNNING: SUCCESS"
+          else
+            echo "TEST 2 Failed: Auth status was ${AUTH_STATUS}" >&2; exit 1
+          fi
 
           echo "========================================================"
           echo " REGRESSION TEST 3: Restart & Credential Persistence"
@@ -178,9 +206,17 @@ jobs:
           sleep 12
 
           RESTART_AUTH_CODE=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -o /dev/null -w "%{http_code}" -u brave:TestSecretPassword123! https://127.0.0.1:8443/)
-          [ "${RESTART_AUTH_CODE}" = "200" ] && echo "TEST 3 Credentials work after restart: SUCCESS"
+          if [ "${RESTART_AUTH_CODE}" = "200" ]; then
+            echo "TEST 3 Credentials work after restart: SUCCESS"
+          else
+            echo "TEST 3 Failed: Restart auth returned ${RESTART_AUTH_CODE}" >&2; exit 1
+          fi
 
-          [ -d "${TEST_DIR}/profile" ] && echo "TEST 3 /config/profile persistent: SUCCESS"
+          if [ -d "${TEST_DIR}/profile" ]; then
+            echo "TEST 3 /config/profile persistent: SUCCESS"
+          else
+            echo "TEST 3 Failed: profile dir missing" >&2; exit 1
+          fi
 
           docker stop -t 5 "${SMOKE_CONTAINER}" >/dev/null 2>&1 || true
           docker rm "${SMOKE_CONTAINER}" >/dev/null 2>&1 || true
@@ -203,12 +239,24 @@ jobs:
           sleep 12
 
           SWITCH_BACK_CODE=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -o /dev/null -w "%{http_code}" https://127.0.0.1:8443/)
-          [ "${SWITCH_BACK_CODE}" = "200" ] && echo "TEST 4 Password prompt disappeared (200): SUCCESS"
+          if [ "${SWITCH_BACK_CODE}" = "200" ]; then
+            echo "TEST 4 Password prompt disappeared (200): SUCCESS"
+          else
+            echo "TEST 4 Failed: Switch back returned ${SWITCH_BACK_CODE}" >&2; exit 1
+          fi
 
-          [ -f "${TEST_DIR}/kasmvnc/.kasmpasswd" ] && echo "TEST 4 Stored .kasmpasswd file preserved: SUCCESS"
+          if [ -f "${TEST_DIR}/kasmvnc/.kasmpasswd" ]; then
+            echo "TEST 4 Stored .kasmpasswd file preserved: SUCCESS"
+          else
+            echo "TEST 4 Failed: .kasmpasswd missing" >&2; exit 1
+          fi
 
           FINAL_STATUS=$(docker exec "${SMOKE_CONTAINER}" cat /config/state/status)
-          [ "${FINAL_STATUS}" = "RUNNING" ] && echo "TEST 4 Status RUNNING: SUCCESS"
+          if [ "${FINAL_STATUS}" = "RUNNING" ]; then
+            echo "TEST 4 Status RUNNING: SUCCESS"
+          else
+            echo "TEST 4 Failed: Final status was ${FINAL_STATUS}" >&2; exit 1
+          fi
 
           echo "--- Checking Process Running Status ---"
           docker exec "${SMOKE_CONTAINER}" pgrep -a -f "brave" || (echo "ERROR: Brave process not running!" && exit 1)
@@ -217,7 +265,9 @@ jobs:
 
           echo "--- Checking Package Verification ---"
           docker exec "${SMOKE_CONTAINER}" dpkg-query -W -f='${Package} ${Version}\n' brave-origin
-          ! docker exec "${SMOKE_CONTAINER}" dpkg -s brave-browser 2>/dev/null || (echo "ERROR: standard brave-browser found!" && exit 1)
+          if docker exec "${SMOKE_CONTAINER}" dpkg -s brave-browser 2>/dev/null; then
+            echo "ERROR: standard brave-browser found!" >&2; exit 1
+          fi
 
           echo "=== Smoke Test Validation Succeeded ==="
 
