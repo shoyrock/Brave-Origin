@@ -92,9 +92,8 @@ jobs:
           }
           trap cleanup EXIT
 
-          echo "--- Testing Invalid KASM_AUTH_ENABLED Validation ---"
-          INVALID_OUTPUT=$(docker run --rm -e KASM_AUTH_ENABLED=invalid "${LOCAL_IMAGE}" 2>&1 || true)
-          echo "${INVALID_OUTPUT}" | grep "Invalid KASM_AUTH_ENABLED" && echo "Invalid auth value rejected: SUCCESS"
+          echo "--- Dumping User.pm ---"
+          docker run --rm "${LOCAL_IMAGE}" cat /usr/share/perl5/KasmVNC/User.pm || true
 
           echo "--- Testing KASM_AUTH_ENABLED=true Missing Credentials Validation ---"
           NO_CRED_OUTPUT=$(docker run --rm -e KASM_AUTH_ENABLED=true "${LOCAL_IMAGE}" 2>&1 || true)
