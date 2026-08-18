@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>Brave-Origin</Name>
+  <Repository>forgejo.foss.homes/shoy/brave-origin:latest</Repository>
+  <Registry>https://forgejo.foss.homes/shoy/-/packages/container/brave-origin</Registry>
+  <Network>bridge</Network>
+  <Privileged>false</Privileged>
+  <ExtraParams>--shm-size=1g --pids-limit 2048</ExtraParams>
+
+  <Overview>Production-grade Brave Origin browser container running on Debian 13 Trixie Slim, accessed remotely via KasmVNC over HTTPS with unprivileged Chromium sandboxing, profile locking, and transaction-safe offline updates.</Overview>
+
+  <Project>https://forgejo.foss.homes/shoy/brave-origin</Project>
+  <Support>https://forgejo.foss.homes/shoy/brave-origin/issues</Support>
+  <TemplateURL>https://forgejo.foss.homes/shoy/brave-origin/raw/branch/main/templates/brave-origin.xml</TemplateURL>
+  <ReadMe>https://forgejo.foss.homes/shoy/brave-origin/raw/branch/main/README.md</ReadMe>
+
+  <Category>Productivity: Tools:Utilities</Category>
+  <ExtraSearchTerms>brave browser kasm kasmvnc remote web</ExtraSearchTerms>
+  <WebUI>https://[IP]:[PORT:8443]/</WebUI>
+  <Date>2026-08-18</Date>
+  <MinVer>6.9</MinVer>
+  <License>MIT</License>
+
+  <!-- Web Port -->
+  <Config Name="Web HTTPS Port" Target="8443" Default="8443" Mode="tcp" Description="KasmVNC Web HTTPS port for remote browser access." Type="Port" Display="always" Required="true" Mask="false">8443</Config>
+
+  <!-- Appdata Storage -->
+  <Config Name="Config &amp; Profile Storage" Target="/config" Default="/mnt/user/appdata/brave-origin" Mode="rw" Description="Persistent directory for browser profile, downloads, and KasmVNC state." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/brave-origin</Config>
+
+  <!-- Authentication -->
+  <Config Name="KasmVNC Username" Target="KASM_USER" Default="brave" Description="Username used to log in to the web interface." Type="Variable" Display="always" Required="true" Mask="false">brave</Config>
+  <Config Name="KasmVNC Password" Target="KASM_PASSWORD" Default="" Description="Password used to log in to the web interface." Type="Variable" Display="always" Required="true" Mask="true"></Config>
+
+  <!-- User / Permissions -->
+  <Config Name="PUID" Target="PUID" Default="99" Description="Container user ID (Unraid default: 99)." Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Description="Container group ID (Unraid default: 100)." Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
+  <Config Name="UMASK" Target="UMASK" Default="022" Description="File creation permissions mask." Type="Variable" Display="advanced" Required="false" Mask="false">022</Config>
+  <Config Name="Timezone" Target="TZ" Default="America/New_York" Description="Container timezone." Type="Variable" Display="always" Required="false" Mask="false">America/New_York</Config>
+
+  <!-- Display Resolution -->
+  <Config Name="Display Width" Target="DISPLAY_WIDTH" Default="1920" Description="Virtual desktop width in pixels." Type="Variable" Display="advanced" Required="false" Mask="false">1920</Config>
+  <Config Name="Display Height" Target="DISPLAY_HEIGHT" Default="1080" Description="Virtual desktop height in pixels." Type="Variable" Display="advanced" Required="false" Mask="false">1080</Config>
+
+  <!-- Features -->
+  <Config Name="Automatic Updates" Target="AUTO_UPDATE" Default="true" Description="Enable background transaction-safe offline browser updates." Type="Variable" Display="always" Required="false" Mask="false">true</Config>
+  <Config Name="Hardware Acceleration" Target="ENABLE_GPU" Default="false" Description="Enable hardware acceleration (requires Intel/AMD GPU device passthrough)." Type="Variable" Display="always" Required="false" Mask="false">false</Config>
+</Container>
