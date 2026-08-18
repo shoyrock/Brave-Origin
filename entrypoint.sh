@@ -98,6 +98,13 @@ if [ ! -f "${CERT_FILE}" ] || [ ! -f "${KEY_FILE}" ]; then
     chmod 600 "${KEY_FILE}" "${CERT_FILE}"
 fi
 
+# 6. Passwordless KasmVNC Internal Credential Initialization
+KASMPASSWD_FILE="/config/kasmvnc/.kasmpasswd"
+if [ ! -f "${KASMPASSWD_FILE}" ]; then
+    printf "nopassword\nnopassword\n" | kasmvncpasswd -u default -rwo "${KASMPASSWD_FILE}" >/dev/null 2>&1 || true
+    chmod 600 "${KASMPASSWD_FILE}" 2>/dev/null || true
+fi
+
 # 7. Configure KasmVNC YAML Settings (Explicit Port, Resolution & Encoding)
 CONFIG_YAML="/config/kasmvnc/kasmvnc.yaml"
 if [ ! -f "${CONFIG_YAML}" ]; then
@@ -126,23 +133,11 @@ fi
 
 # Create user VNC symlinks
 ln -snf /config/kasmvnc/kasmvnc.yaml /config/.vnc/kasmvnc.yaml
+ln -snf /config/kasmvnc/.kasmpasswd /config/.kasmpasswd
+ln -snf /config/kasmvnc/.kasmpasswd /config/.vnc/passwd 2>/dev/null || true
 
-# 8. Optimized Ownership Handling (Repairs ownership on mismatch, skips slow scan when correct)
-CONFIG_UID=$(stat -c '%u' /config 2>/dev/null || echo "0")
-CONFIG_GID=$(stat -c '%g' /config 2>/dev/null || echo "0")
-PROFILE_UID=$(stat -c '%u' /config/profile 2>/dev/null || echo "0")
-PROFILE_GID=$(stat -c '%g' /config/profile 2>/dev/null || echo "0")
-
-if [ "${CONFIG_UID}" != "${PUID}" ] || [ "${CONFIG_GID}" != "${PGID}" ] || \
-   [ "${PROFILE_UID}" != "${PUID}" ] || [ "${PROFILE_GID}" != "${PGID}" ]; then
-    echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Ownership mismatch detected on /config (Found ${CONFIG_UID}:${CONFIG_GID}, Expected ${PUID}:${PGID}). Repairing permissions..."
-    chown -R braveuser:braveuser /config
-else
-    # Fast path: targeted ownership for runtime-generated configuration and state
-    chown -R braveuser:braveuser /config/kasmvnc /config/state /config/.config 2>/dev/null || true
-fi
-
-chown -R braveuser:braveuser /tmp/runtime-braveuser /tmp/brave-cache /tmp/.X11-unix
+# 8. User and Storage Permissions Handling
+chown -R braveuser:braveuser /config /tmp/runtime-braveuser /tmp/brave-cache /tmp/.X11-unix
 
 # 9. Startup Update Check & Downgrade Assessment
 LAST_VERSION_FILE="/config/state/last-brave-version"
@@ -249,5 +244,6 @@ exec gosu braveuser vncserver :1 \
     -depth 24 \
     -websocketPort "${WEB_PORT}" \
     -disableBasicAuth \
+    -SecurityTypes None \
     -xstartup /usr/local/bin/start-session.sh \
     -fg
