@@ -100,37 +100,118 @@ jobs:
           NO_CRED_OUTPUT=$(docker run --rm -e KASM_AUTH_ENABLED=true "${LOCAL_IMAGE}" 2>&1 || true)
           echo "${NO_CRED_OUTPUT}" | grep "no authentication credentials exist" && echo "Missing credentials rejected: SUCCESS"
 
-          echo "--- Starting Primary Smoke Test Container (KASM_AUTH_ENABLED=false) ---"
+          TEST_DIR=$(mktemp -d)
+          chmod 777 "${TEST_DIR}"
+
+          echo "========================================================"
+          echo " REGRESSION TEST 1: Authentication Disabled (KASM_AUTH_ENABLED=false)"
+          echo "========================================================"
           docker run --detach \
             --name "${SMOKE_CONTAINER}" \
             --shm-size=1g \
             --security-opt seccomp=unconfined \
+            -v "${TEST_DIR}:/config" \
             -e KASM_AUTH_ENABLED="false" \
             -e WEB_PORT="8443" \
             -e AUTO_UPDATE="false" \
             -e ENABLE_GPU="false" \
             "${LOCAL_IMAGE}"
 
-          echo "Waiting 15 seconds for KasmVNC & Brave Origin startup..."
-          sleep 15
+          echo "Waiting 12 seconds for KasmVNC & Brave Origin startup..."
+          sleep 12
 
-          echo "--- Testing Direct HTTPS Web Endpoint Inside Container ---"
-          docker exec "${SMOKE_CONTAINER}" curl -k -fsS https://127.0.0.1:8443/ >/dev/null && echo "Direct HTTPS check: SUCCESS"
+          echo "--- Verifying Unauthenticated Mode ---"
+          HTTP_CODE=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -o /dev/null -w "%{http_code}" https://127.0.0.1:8443/)
+          [ "${HTTP_CODE}" = "200" ] && echo "TEST 1 HTTP Code 200 without login prompt: SUCCESS"
+          
+          STATUS=$(docker exec "${SMOKE_CONTAINER}" cat /config/state/status)
+          [ "${STATUS}" = "RUNNING" ] && echo "TEST 1 Status RUNNING: SUCCESS"
 
-          echo "--- Verifying Container Status ---"
-          docker exec "${SMOKE_CONTAINER}" cat /config/state/status
-          docker exec "${SMOKE_CONTAINER}" cat /config/state/last-brave-version
+          echo "--- Setting Persistent Credentials with reset-password.sh ---"
+          docker exec "${SMOKE_CONTAINER}" /usr/local/bin/reset-password.sh "TestSecretPassword123!"
 
-          echo "--- Container Process Tree ---"
-          docker exec "${SMOKE_CONTAINER}" ps aux || true
+          echo "--- Verifying existing credentials do NOT activate auth while KASM_AUTH_ENABLED=false ---"
+          HTTP_CODE_AFTER_PASSWD=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -o /dev/null -w "%{http_code}" https://127.0.0.1:8443/)
+          [ "${HTTP_CODE_AFTER_PASSWD}" = "200" ] && echo "TEST 1 Existing .kasmpasswd does not trigger auth: SUCCESS"
+
+          docker rm -f "${SMOKE_CONTAINER}"
+
+          echo "========================================================"
+          echo " REGRESSION TEST 2: Authentication Enabled (KASM_AUTH_ENABLED=true)"
+          echo "========================================================"
+          docker run --detach \
+            --name "${SMOKE_CONTAINER}" \
+            --shm-size=1g \
+            --security-opt seccomp=unconfined \
+            -v "${TEST_DIR}:/config" \
+            -e KASM_AUTH_ENABLED="true" \
+            -e KASM_USER="brave" \
+            -e WEB_PORT="8443" \
+            -e AUTO_UPDATE="false" \
+            -e ENABLE_GPU="false" \
+            "${LOCAL_IMAGE}"
+
+          echo "Waiting 12 seconds for KasmVNC & Brave Origin startup..."
+          sleep 12
+
+          echo "--- Verifying Login Prompt (Unauthenticated Request) ---"
+          UNAUTH_CODE=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -o /dev/null -w "%{http_code}" https://127.0.0.1:8443/)
+          [ "${UNAUTH_CODE}" = "401" ] && echo "TEST 2 Unauthenticated request returns 401 prompt: SUCCESS"
+
+          echo "--- Verifying Incorrect Password Rejection ---"
+          BAD_AUTH_CODE=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -o /dev/null -w "%{http_code}" -u brave:WrongPassword https://127.0.0.1:8443/)
+          [ "${BAD_AUTH_CODE}" = "401" ] && echo "TEST 2 Incorrect password rejected (401): SUCCESS"
+
+          echo "--- Verifying Correct Password Acceptance ---"
+          GOOD_AUTH_CODE=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -o /dev/null -w "%{http_code}" -u brave:TestSecretPassword123! https://127.0.0.1:8443/)
+          [ "${GOOD_AUTH_CODE}" = "200" ] && echo "TEST 2 Correct password accepted (200): SUCCESS"
+
+          AUTH_STATUS=$(docker exec "${SMOKE_CONTAINER}" cat /config/state/status)
+          [ "${AUTH_STATUS}" = "RUNNING" ] && echo "TEST 2 Status RUNNING: SUCCESS"
+
+          echo "========================================================"
+          echo " REGRESSION TEST 3: Restart & Credential Persistence"
+          echo "========================================================"
+          docker restart "${SMOKE_CONTAINER}"
+          echo "Waiting 12 seconds for restarted container..."
+          sleep 12
+
+          RESTART_AUTH_CODE=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -o /dev/null -w "%{http_code}" -u brave:TestSecretPassword123! https://127.0.0.1:8443/)
+          [ "${RESTART_AUTH_CODE}" = "200" ] && echo "TEST 3 Credentials work after restart: SUCCESS"
+
+          [ -d "${TEST_DIR}/profile" ] && echo "TEST 3 /config/profile persistent: SUCCESS"
+
+          docker rm -f "${SMOKE_CONTAINER}"
+
+          echo "========================================================"
+          echo " REGRESSION TEST 4: Switch Back to Authentication Disabled"
+          echo "========================================================"
+          docker run --detach \
+            --name "${SMOKE_CONTAINER}" \
+            --shm-size=1g \
+            --security-opt seccomp=unconfined \
+            -v "${TEST_DIR}:/config" \
+            -e KASM_AUTH_ENABLED="false" \
+            -e WEB_PORT="8443" \
+            -e AUTO_UPDATE="false" \
+            -e ENABLE_GPU="false" \
+            "${LOCAL_IMAGE}"
+
+          echo "Waiting 12 seconds for container startup..."
+          sleep 12
+
+          SWITCH_BACK_CODE=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -o /dev/null -w "%{http_code}" https://127.0.0.1:8443/)
+          [ "${SWITCH_BACK_CODE}" = "200" ] && echo "TEST 4 Password prompt disappeared (200): SUCCESS"
+
+          [ -f "${TEST_DIR}/kasmvnc/.kasmpasswd" ] && echo "TEST 4 Stored .kasmpasswd file preserved: SUCCESS"
+
+          FINAL_STATUS=$(docker exec "${SMOKE_CONTAINER}" cat /config/state/status)
+          [ "${FINAL_STATUS}" = "RUNNING" ] && echo "TEST 4 Status RUNNING: SUCCESS"
 
           echo "--- Checking Process Running Status ---"
           docker exec "${SMOKE_CONTAINER}" pgrep -a -f "brave" || (echo "ERROR: Brave process not running!" && exit 1)
           docker exec "${SMOKE_CONTAINER}" pgrep -a -f "openbox" || (echo "ERROR: Openbox process not running!" && exit 1)
           docker exec "${SMOKE_CONTAINER}" pgrep -a -f "Xvnc" || (echo "ERROR: Xvnc process not running!" && exit 1)
-
-          echo "--- Checking Brave Diagnostic Log ---"
-          docker exec "${SMOKE_CONTAINER}" cat /config/state/brave.log 2>/dev/null || true
 
           echo "--- Checking Package Verification ---"
           docker exec "${SMOKE_CONTAINER}" dpkg-query -W -f='${Package} ${Version}\n' brave-origin
