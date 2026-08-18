@@ -56,6 +56,10 @@ RUN set -eux; \
     else \
         apt-get install -y --no-install-recommends brave-origin; \
     fi; \
+    if [ -f /opt/brave.com/brave-origin/chrome-sandbox ]; then \
+        chown root:root /opt/brave.com/brave-origin/chrome-sandbox; \
+        chmod 4755 /opt/brave.com/brave-origin/chrome-sandbox; \
+    fi; \
     # 3. Download, validate, and install verified official KasmVNC release asset for Debian Trixie
     ARCH="$(dpkg --print-architecture)"; \
     KASMVNC_DEB="kasmvncserver_trixie_${KASMVNC_VERSION}_${ARCH}.deb"; \
@@ -192,6 +196,7 @@ ENV PUID=1000 \
     ENABLE_GPU=true \
     ENABLE_AUDIO=true \
     DRI_NODE=/dev/dri/renderD128 \
+    CHROME_DEVEL_SANDBOX=/opt/brave.com/brave-origin/chrome-sandbox \
     BRAVE_FLAGS=""
 
 # Persistent browser profile, downloads, and Kasm configuration volume

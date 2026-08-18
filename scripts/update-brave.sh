@@ -187,6 +187,12 @@ if [ -n "${TARGET_VER}" ] && [ "${TARGET_VER}" != "none" ]; then
             echo "[updater] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Upgrade complete. Installed version: ${NEW_INSTALLED_VER}"
             INSTALLED_VER="${NEW_INSTALLED_VER}"
 
+            # Restore SUID sandbox permissions if replaced by upgrade
+            if [ -f "/opt/brave.com/brave-origin/chrome-sandbox" ]; then
+                chown root:root /opt/brave.com/brave-origin/chrome-sandbox 2>/dev/null || true
+                chmod 4755 /opt/brave.com/brave-origin/chrome-sandbox 2>/dev/null || true
+            fi
+
             # Clean cached package archives
             apt-get clean 2>/dev/null || true
 

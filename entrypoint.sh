@@ -85,6 +85,13 @@ rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 /tmp/*.pid /tmp/*.flag /run/lock/brave-ori
 chmod 1777 /tmp/.X11-unix /run/lock
 chmod 700 /tmp/runtime-braveuser /tmp/brave-cache
 
+# Configure official Chromium SUID sandbox permissions
+if [ -f "/opt/brave.com/brave-origin/chrome-sandbox" ]; then
+    chown root:root /opt/brave.com/brave-origin/chrome-sandbox 2>/dev/null || true
+    chmod 4755 /opt/brave.com/brave-origin/chrome-sandbox 2>/dev/null || true
+    export CHROME_DEVEL_SANDBOX="/opt/brave.com/brave-origin/chrome-sandbox"
+fi
+
 # 5. SSL / TLS Certificate Setup
 CERT_FILE="/config/kasmvnc/certs/kasmvnc.pem"
 KEY_FILE="/config/kasmvnc/certs/kasmvnc.key"
