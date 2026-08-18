@@ -97,17 +97,8 @@ CONFIG_PATH=./appdata
 # Example for Unraid OS deployments:
 # CONFIG_PATH=/mnt/user/appdata/brave-origin
 
-KASM_USER=brave
-KASM_PASSWORD=MySecurePassword123!
 WEB_PORT=8443
 ```
-
-#### First-Boot Interactive Password Initialization (Optional)
-If you prefer not to write passwords in `.env`, leave `KASM_PASSWORD=` empty and initialize credentials interactively:
-```bash
-docker compose run --rm brave-origin /usr/local/bin/reset-password.sh --generate
-```
-This displays the generated password once directly on your terminal and stores the obfuscated credential file in `/config/kasmvnc/.kasmpasswd` (mode `0600`) without printing passwords to container daemon logs.
 
 ### 3. Build & Launch
 
@@ -132,7 +123,7 @@ https://localhost:8443
 *(If accessing from another device on your network, use `https://<HOST-IP>:8443`)*
 
 > [!NOTE]
-> Because KasmVNC generates a self-signed TLS certificate by default, your browser will display a certificate warning on first visit. Accept the certificate to proceed to the login page, then enter your `KASM_USER` and password.
+> Because KasmVNC generates a self-signed TLS certificate by default, your browser will display a certificate warning on first visit. Accept the certificate to access the desktop directly (Basic Authentication is disabled for local network deployment).
 
 ---
 
@@ -262,9 +253,6 @@ Chromium profiles undergo irreversible database migrations (SQLite schemas, Leve
 | `CONFIG_PATH` | `./appdata` | Host persistent directory path (supports local folders or `/mnt/user/appdata/brave-origin`) |
 | `CONTAINER_HOSTNAME` | `brave-origin` | Stable container hostname to prevent singleton identity churn |
 | `WEB_PORT` | `8443` | Host port mapped to KasmVNC HTTPS interface |
-| `KASM_USER` | `brave` | KasmVNC HTTP authentication username |
-| `KASM_PASSWORD` | `""` | KasmVNC password (leave blank to initialize interactively) |
-| `KASM_PASSWORD_FILE` | `""` | Path to mounted secret file containing password inside container |
 | `PUID` | `1000` | Host User ID mapped to container user (`99` for Unraid, `1000` for standard Linux) |
 | `PGID` | `1000` | Host Group ID mapped to container user (`100` for Unraid, `1000` for standard Linux) |
 | `UMASK` | `022` | File creation mask for persistent files |

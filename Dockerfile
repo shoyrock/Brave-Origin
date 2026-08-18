@@ -35,6 +35,7 @@ RUN set -eux; \
         fonts-dejavu-core \
         fonts-noto-color-emoji \
         xauth \
+        x11-utils \
         x11-xkb-utils \
         xkb-data \
         libswitch-perl \
@@ -182,9 +183,6 @@ ENV PUID=1000 \
     WEB_PORT=8443 \
     DISPLAY_WIDTH=1920 \
     DISPLAY_HEIGHT=1080 \
-    KASM_USER=brave \
-    KASM_PASSWORD="" \
-    KASM_PASSWORD_FILE="" \
     AUTO_UPDATE=true \
     UPDATE_INTERVAL=21600 \
     DOWNGRADE_RETRY_INTERVAL=300 \

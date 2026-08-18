@@ -14,9 +14,6 @@ TZ="${TZ:-UTC}"
 WEB_PORT="${WEB_PORT:-8443}"
 DISPLAY_WIDTH="${DISPLAY_WIDTH:-1920}"
 DISPLAY_HEIGHT="${DISPLAY_HEIGHT:-1080}"
-KASM_USER="${KASM_USER:-brave}"
-KASM_PASSWORD="${KASM_PASSWORD:-}"
-KASM_PASSWORD_FILE="${KASM_PASSWORD_FILE:-}"
 AUTO_UPDATE="${AUTO_UPDATE:-true}"
 UPDATE_INTERVAL="${UPDATE_INTERVAL:-21600}"
 DOWNGRADE_RETRY_INTERVAL="${DOWNGRADE_RETRY_INTERVAL:-300}"
@@ -30,16 +27,7 @@ DRI_NODE="${DRI_NODE:-/dev/dri/renderD128}"
 # Apply user-configured file creation mask
 umask "${UMASK}"
 
-# Read secret from KASM_PASSWORD_FILE if KASM_PASSWORD is not directly supplied
-if [ -z "${KASM_PASSWORD}" ] && [ -n "${KASM_PASSWORD_FILE}" ]; then
-    if [ -f "${KASM_PASSWORD_FILE}" ]; then
-        KASM_PASSWORD="$(cat "${KASM_PASSWORD_FILE}" 2>/dev/null || echo "")"
-    else
-        echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Warning: KASM_PASSWORD_FILE (${KASM_PASSWORD_FILE}) not found. Ensure host secret is mounted into container." >&2
-    fi
-fi
-
-export PUID PGID UMASK TZ WEB_PORT DISPLAY_WIDTH DISPLAY_HEIGHT KASM_USER
+export PUID PGID UMASK TZ WEB_PORT DISPLAY_WIDTH DISPLAY_HEIGHT
 export AUTO_UPDATE UPDATE_INTERVAL DOWNGRADE_RETRY_INTERVAL MIN_UPDATE_FREE_SPACE_MB
 export BRAVE_STARTUP_TIMEOUT BRAVE_ORIGIN_VERSION ENABLE_GPU ENABLE_AUDIO DRI_NODE
 export HOME=/config
@@ -89,8 +77,8 @@ if [ -f "/config/.last-brave-version" ] && [ ! -f "/config/state/last-brave-vers
     mv -f "/config/.last-brave-version" "/config/state/last-brave-version" 2>/dev/null || true
 fi
 
-# Remove legacy plaintext credentials file if previously generated
-rm -f /config/kasmvnc/credentials.txt 2>/dev/null || true
+# Remove legacy credentials files if previously generated
+rm -f /config/kasmvnc/credentials.txt /config/kasmvnc/.kasmpasswd /config/.kasmpasswd 2>/dev/null || true
 
 rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 /tmp/*.pid /tmp/*.flag /run/lock/brave-origin-update.lock 2>/dev/null || true
 
@@ -108,35 +96,6 @@ if [ ! -f "${CERT_FILE}" ] || [ ! -f "${KEY_FILE}" ]; then
         -out "${CERT_FILE}" \
         -subj "/C=US/ST=State/L=City/O=BraveOrigin/CN=brave-origin" >/dev/null 2>&1
     chmod 600 "${KEY_FILE}" "${CERT_FILE}"
-fi
-
-# 6. KasmVNC Authentication Setup
-KASMPASSWD_FILE="/config/kasmvnc/.kasmpasswd"
-
-if [ -n "${KASM_PASSWORD}" ]; then
-    echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Configuring KasmVNC credentials for user '${KASM_USER}'..."
-    printf "%s\n%s\n" "${KASM_PASSWORD}" "${KASM_PASSWORD}" | \
-        kasmvncpasswd -u "${KASM_USER}" -rwo "${KASMPASSWD_FILE}" >/dev/null 2>&1
-    chmod 600 "${KASMPASSWD_FILE}" 2>/dev/null || true
-elif [ -f "${KASMPASSWD_FILE}" ]; then
-    echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Using existing KasmVNC credentials from ${KASMPASSWD_FILE}"
-    chmod 600 "${KASMPASSWD_FILE}" 2>/dev/null || true
-else
-    echo "================================================================================"
-    echo "[kasmvnc] ERROR: Authentication credentials are not initialized!"
-    echo ""
-    echo "To initialize credentials, choose one of the following methods:"
-    echo ""
-    echo "1. Set KASM_PASSWORD in your .env file:"
-    echo "   KASM_PASSWORD=MySecurePassword123!"
-    echo ""
-    echo "2. Set KASM_PASSWORD_FILE pointing to a mounted secret file:"
-    echo "   KASM_PASSWORD_FILE=/run/secrets/kasm_password"
-    echo ""
-    echo "3. Or generate credentials interactively without modifying .env:"
-    echo "   docker compose run --rm brave-origin /usr/local/bin/reset-password.sh --generate"
-    echo "================================================================================"
-    exit 1
 fi
 
 # 7. Configure KasmVNC YAML Settings (Explicit Port, Resolution & Encoding)
@@ -167,7 +126,6 @@ fi
 
 # Create user VNC symlinks
 ln -snf /config/kasmvnc/kasmvnc.yaml /config/.vnc/kasmvnc.yaml
-ln -snf /config/kasmvnc/.kasmpasswd /config/.kasmpasswd
 
 # 8. Optimized Ownership Handling (Repairs ownership on mismatch, skips slow scan when correct)
 CONFIG_UID=$(stat -c '%u' /config 2>/dev/null || echo "0")
@@ -277,18 +235,19 @@ trap cleanup SIGTERM SIGINT SIGHUP SIGQUIT
 echo "========================================================"
 echo " Brave Origin KasmVNC Server Ready!"
 echo " URL:                 https://localhost:${WEB_PORT}"
-echo " User:                ${KASM_USER}"
+echo " Authentication:      Disabled (Network-Level Protection)"
 echo " Installed Version:   ${INSTALLED_BRAVE}"
 echo " Profile Version:     ${LAST_RECORDED_VER:-None (new profile)}"
 echo " Update Interval:     ${UPDATE_INTERVAL}s (Downgrade Recovery: ${DOWNGRADE_RETRY_INTERVAL}s)"
 echo "========================================================"
 
 # 13. Drop privileges and start KasmVNC server
-echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Launching KasmVNC on display :1 (HTTPS port ${WEB_PORT})..."
+echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Launching KasmVNC on display :1 (HTTPS port ${WEB_PORT}, -disableBasicAuth)..."
 exec gosu braveuser vncserver :1 \
     -config /config/kasmvnc/kasmvnc.yaml \
     -geometry "${DISPLAY_WIDTH}x${DISPLAY_HEIGHT}" \
     -depth 24 \
     -websocketPort "${WEB_PORT}" \
+    -disableBasicAuth \
     -xstartup /usr/local/bin/start-session.sh \
     -fg

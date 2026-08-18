@@ -48,7 +48,13 @@ record_version_atomic() {
     fi
 }
 
-echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Initializing graphical desktop session..."
+export DISPLAY="${DISPLAY:-:1}"
+export HOME="${HOME:-/config}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/runtime-braveuser}"
+unset WAYLAND_DISPLAY
+export XDG_SESSION_TYPE=x11
+
+echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Initializing graphical desktop session on DISPLAY=${DISPLAY}..."
 
 # 1. Start private D-Bus session
 if command -v dbus-launch >/dev/null 2>&1; then
@@ -56,7 +62,29 @@ if command -v dbus-launch >/dev/null 2>&1; then
     echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] D-Bus session active (PID: ${DBUS_SESSION_BUS_PID:-unknown})"
 fi
 
-# 2. Configure Openbox window manager
+# 2. Wait for X server display readiness before starting window manager or applications
+echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Verifying X server readiness on ${DISPLAY}..."
+X_READY=false
+for i in $(seq 1 50); do
+    if command -v xdpyinfo >/dev/null 2>&1; then
+        if xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1; then
+            X_READY=true
+            break
+        fi
+    elif [ -S "/tmp/.X11-unix/X${DISPLAY#*:}" ]; then
+        X_READY=true
+        break
+    fi
+    sleep 0.2
+done
+
+if [ "${X_READY}" = "true" ]; then
+    echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] X server is active and responding on ${DISPLAY}."
+else
+    echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Warning: X server readiness timed out on ${DISPLAY}. Proceeding with launch..."
+fi
+
+# 3. Configure and start Openbox window manager
 mkdir -p /config/.config/openbox
 if [ ! -f /config/.config/openbox/rc.xml ] && [ -f /etc/xdg/openbox/rc.xml ]; then
     cp /etc/xdg/openbox/rc.xml /config/.config/openbox/rc.xml
@@ -65,8 +93,14 @@ fi
 echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Starting Openbox window manager..."
 openbox --config-file /config/.config/openbox/rc.xml &
 OPENBOX_PID=$!
+sleep 0.5
+if kill -0 "${OPENBOX_PID}" 2>/dev/null; then
+    echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Openbox window manager running (PID: ${OPENBOX_PID})."
+else
+    echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Warning: Openbox window manager process did not stay running." >&2
+fi
 
-# 3. Audio setup
+# 4. Audio setup
 if [ "${ENABLE_AUDIO:-true}" = "true" ]; then
     if [ -n "${PULSE_SERVER}" ]; then
         echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Using external PulseAudio server: ${PULSE_SERVER}"
@@ -76,7 +110,7 @@ if [ "${ENABLE_AUDIO:-true}" = "true" ]; then
     fi
 fi
 
-# 4. Locate official Brave Origin binary
+# 5. Locate official Brave Origin binary
 BRAVE_BIN=""
 if command -v brave-origin >/dev/null 2>&1; then
     BRAVE_BIN="brave-origin"
@@ -94,8 +128,9 @@ fi
 
 echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Brave Origin executable located: ${BRAVE_BIN}"
 
-# 5. Configure Brave Origin runtime flags (Preserving Chromium Sandbox)
+# 6. Configure Brave Origin runtime flags (Preserving Chromium Sandbox & Ozone X11)
 BRAVE_ARGS=(
+    "--ozone-platform=x11"
     "--user-data-dir=${PROFILE_DIR}"
     "--disk-cache-dir=/tmp/brave-cache"
     "--default-download-directory=/config/downloads"
@@ -109,12 +144,13 @@ BRAVE_ARGS=(
 
 # Optional GPU Rendering vs Software Rendering Fallback
 if [ "${ENABLE_GPU:-true}" = "false" ]; then
-    echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] GPU rendering explicitly disabled via ENABLE_GPU=false. Using software rendering."
+    echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] GPU rendering explicitly disabled via ENABLE_GPU=false. Using software rendering (--disable-gpu)."
     BRAVE_ARGS+=("--disable-gpu")
 elif [ -e "${DRI_NODE:-/dev/dri/renderD128}" ]; then
     echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Hardware DRI node detected (${DRI_NODE:-/dev/dri/renderD128}). GPU acceleration enabled."
 else
-    echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] DRI device not present. Defaulting to standard rendering with software fallback."
+    echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] DRI device not present. Defaulting to software rendering (--disable-gpu)."
+    BRAVE_ARGS+=("--disable-gpu")
 fi
 
 SHM_SIZE_KB=$(df -k /dev/shm 2>/dev/null | awk 'NR==2 {print $2}' || echo "0")
@@ -282,9 +318,15 @@ while true; do
     # Safely clean stale Chromium singletons
     safe_clean_singleton_artifacts
 
+    # Bounded Brave Diagnostic Log Management
+    BRAVE_LOG="${STATE_DIR}/brave.log"
+    if [ -f "${BRAVE_LOG}" ] && [ "$(stat -c%s "${BRAVE_LOG}" 2>/dev/null || echo 0)" -gt 1048576 ]; then
+        tail -n 500 "${BRAVE_LOG}" > "${BRAVE_LOG}.tmp" && mv -f "${BRAVE_LOG}.tmp" "${BRAVE_LOG}"
+    fi
+
     set_status_atomic "STARTING"
     echo "[brave] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Launching Brave Origin (Version: ${CURRENT_VER})..."
-    "${BRAVE_BIN}" "${BRAVE_ARGS[@]}" &
+    "${BRAVE_BIN}" "${BRAVE_ARGS[@]}" 2>&1 | tee -a "${BRAVE_LOG}" &
     BRAVE_PID=$!
     echo "${BRAVE_PID}" > "${PID_FILE}"
 
@@ -295,7 +337,10 @@ while true; do
     for i in $(seq 1 "${STARTUP_TIMEOUT}"); do
         sleep 1
         if ! kill -0 "${BRAVE_PID}" 2>/dev/null; then
-            echo "[brave] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Error: Brave process exited prematurely during startup verification."
+            echo "[brave] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Error: Brave process exited prematurely during startup verification." >&2
+            echo "[brave] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] --- Recent Brave Startup Diagnostics (${BRAVE_LOG}) ---" >&2
+            tail -n 50 "${BRAVE_LOG}" >&2 || true
+            echo "[brave] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] ---------------------------------------------------" >&2
             set_status_atomic "ERROR"
             handle_crash_backoff
             break
@@ -349,7 +394,10 @@ while true; do
 
     # Application Watchdog: Detect crash vs user closing browser window
     if [ "${LIFETIME}" -lt 5 ] || [ "${EXIT_CODE}" -ne 0 ]; then
-        echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Watchdog: Brave Origin exited unexpectedly (Code: ${EXIT_CODE}, Uptime: ${LIFETIME}s)."
+        echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Watchdog: Brave Origin exited unexpectedly (Code: ${EXIT_CODE}, Uptime: ${LIFETIME}s)." >&2
+        echo "[brave] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] --- Recent Brave Diagnostics (${BRAVE_LOG}) ---" >&2
+        tail -n 50 "${BRAVE_LOG}" >&2 || true
+        echo "[brave] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] ---------------------------------------------------" >&2
         handle_crash_backoff
     else
         echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Watchdog: Brave Origin window closed. Automatically relaunching in 2 seconds..."

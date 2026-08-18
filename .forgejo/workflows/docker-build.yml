@@ -80,9 +80,9 @@ jobs:
 
           docker run --detach \
             --name "${SMOKE_CONTAINER}" \
-            -e KASM_PASSWORD="CIPasswordTest123!" \
             -e WEB_PORT="8443" \
             -e AUTO_UPDATE="false" \
+            -e ENABLE_GPU="false" \
             "${LOCAL_IMAGE}"
 
           echo "Waiting 15 seconds for KasmVNC & Brave Origin startup..."
@@ -91,11 +91,24 @@ jobs:
           echo "--- Testing Direct HTTPS Web Endpoint Inside Container ---"
           docker exec "${SMOKE_CONTAINER}" curl -k -fsS https://127.0.0.1:8443/ >/dev/null && echo "Direct HTTPS check: SUCCESS"
 
+          echo "--- Verifying Container Status ---"
+          docker exec "${SMOKE_CONTAINER}" cat /config/state/status
+          docker exec "${SMOKE_CONTAINER}" cat /config/state/last-brave-version
+
           echo "--- Container Process Tree ---"
           docker exec "${SMOKE_CONTAINER}" ps aux || true
 
-          echo "--- Profile State Directory ---"
-          docker exec "${SMOKE_CONTAINER}" ls -la /config/state || true
+          echo "--- Checking Process Running Status ---"
+          docker exec "${SMOKE_CONTAINER}" pgrep -a -f "brave" || (echo "ERROR: Brave process not running!" && exit 1)
+          docker exec "${SMOKE_CONTAINER}" pgrep -a -f "openbox" || (echo "ERROR: Openbox process not running!" && exit 1)
+          docker exec "${SMOKE_CONTAINER}" pgrep -a -f "Xvnc" || (echo "ERROR: Xvnc process not running!" && exit 1)
+
+          echo "--- Checking Brave Diagnostic Log ---"
+          docker exec "${SMOKE_CONTAINER}" cat /config/state/brave.log 2>/dev/null || true
+
+          echo "--- Checking Package Verification ---"
+          docker exec "${SMOKE_CONTAINER}" dpkg-query -W -f='${Package} ${Version}\n' brave-origin
+          ! docker exec "${SMOKE_CONTAINER}" dpkg -s brave-browser 2>/dev/null || (echo "ERROR: standard brave-browser found!" && exit 1)
 
           echo "=== Smoke Test Validation Succeeded ==="
 

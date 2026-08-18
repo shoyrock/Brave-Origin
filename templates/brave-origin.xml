@@ -27,10 +27,6 @@
   <!-- Appdata Storage -->
   <Config Name="Config &amp; Profile Storage" Target="/config" Default="/mnt/user/appdata/brave-origin" Mode="rw" Description="Persistent directory for browser profile, downloads, and KasmVNC state." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/brave-origin</Config>
 
-  <!-- Authentication -->
-  <Config Name="KasmVNC Username" Target="KASM_USER" Default="brave" Description="Username used to log in to the web interface." Type="Variable" Display="always" Required="true" Mask="false">brave</Config>
-  <Config Name="KasmVNC Password" Target="KASM_PASSWORD" Default="" Description="Password used to log in to the web interface." Type="Variable" Display="always" Required="true" Mask="true"></Config>
-
   <!-- User / Permissions -->
   <Config Name="PUID" Target="PUID" Default="99" Description="Container user ID (Unraid default: 99)." Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>
   <Config Name="PGID" Target="PGID" Default="100" Description="Container group ID (Unraid default: 100)." Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
