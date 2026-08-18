@@ -107,17 +107,14 @@ jobs:
           echo " Publishing Image to Registry: ${IMAGE_NAME}:latest"
           echo "========================================================"
           
-          # Attempt login if token is available
-          LOGIN_TOKEN="${{ secrets.FORGEJO_TOKEN || secrets.GITHUB_TOKEN || '' }}"
-          if [ -n "${LOGIN_TOKEN}" ]; then
-            printf '%s' "${LOGIN_TOKEN}" | docker login "${REGISTRY}" -u "${{ github.actor }}" --password-stdin || true
-          fi
-
-          # Attempt push (with error recovery if plain HTTP registry is used)
-          if docker push "${IMAGE_NAME}:latest"; then
-            echo "Successfully pushed ${IMAGE_NAME}:latest to Forgejo Registry!"
+          if [ -n "${REGISTRY_TOKEN:-}" ]; then
+            printf '%s' "${REGISTRY_TOKEN}" | docker login "${REGISTRY}" -u "${REGISTRY_USERNAME:-shoy}" --password-stdin
+            docker push "${IMAGE_NAME}:latest" || {
+              echo "Notice: Registry push requires insecure-registries in docker daemon if HTTP."
+            }
             docker push "${IMAGE_NAME}:${{ github.sha }}" || true
-          else
-            echo "Notice: Remote registry push skipped or requires insecure registry flag in daemon.json."
-            echo "The image is fully built, tested, and locally available on the Unraid Docker host as '${LOCAL_IMAGE}'."
+            echo "Image is tagged and ready on Unraid runner as ${LOCAL_IMAGE} and ${IMAGE_NAME}:latest"
           fi
+        env:
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
