@@ -48,6 +48,11 @@ export HOME=/config
 export DISPLAY=:1
 export XDG_RUNTIME_DIR=/tmp/runtime-braveuser
 
+# If custom command was passed to docker run, execute it directly
+if [ "$#" -gt 0 ] && [ "$1" != "start" ] && [ "$1" != "vncserver" ]; then
+    exec "$@"
+fi
+
 echo "========================================================"
 echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Starting Brave Origin in Docker (KasmVNC)"
 echo "========================================================"
