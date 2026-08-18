@@ -104,23 +104,31 @@ jobs:
         run: |
           set -euo pipefail
           echo "========================================================"
-          echo " Finalizing Deployment"
+          echo " Finalizing Deployment to Forgejo Registry"
           echo "========================================================"
           
-          if [ -n "${REGISTRY_TOKEN:-}" ]; then
-            echo "Attempting registry push if configured..."
-            (
-              printf '%s' "${REGISTRY_TOKEN}" | docker login "${REGISTRY}" -u "${REGISTRY_USERNAME:-shoy}" --password-stdin 2>/dev/null && \
-              docker push "${IMAGE_NAME}:latest" 2>/dev/null && \
-              docker push "${IMAGE_NAME}:${{ github.sha }}" 2>/dev/null
-            ) || {
-              echo "Notice: Registry push skipped (requires insecure-registries in host Docker daemon if plain HTTP)."
-            }
+          TOKEN="${REGISTRY_TOKEN:-${{ secrets.GITHUB_TOKEN }}}"
+          USERNAME="${REGISTRY_USERNAME:-shoy}"
+          
+          if [ -n "${TOKEN}" ]; then
+            echo "Logging into container registry ${REGISTRY} as ${USERNAME}..."
+            printf '%s' "${TOKEN}" | docker login "${REGISTRY}" -u "${USERNAME}" --password-stdin
+            
+            echo "Pushing ${IMAGE_NAME}:latest..."
+            docker push "${IMAGE_NAME}:latest"
+            
+            echo "Pushing ${IMAGE_NAME}:${{ github.sha }}..."
+            docker push "${IMAGE_NAME}:${{ github.sha }}"
+            
+            echo "=== Image successfully published to Forgejo Container Registry! ==="
+          else
+            echo "Warning: No registry token provided. Skipping push."
           fi
 
           echo "========================================================"
           echo " SUCCESS: Brave Origin image is built, verified & deployed"
           echo " Available on Unraid host as: '${LOCAL_IMAGE}'"
+          echo " Available in Registry as: '${IMAGE_NAME}:latest'"
           echo "========================================================"
         env:
           REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
