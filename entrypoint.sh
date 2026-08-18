@@ -140,7 +140,7 @@ if [ "${KASM_AUTH_ENABLED_LOWER}" = "true" ]; then
             fi
             echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Configuring credentials for user '${KASM_USER}' from secret file..."
             printf "%s\n%s\n" "${KASM_PASSWORD}" "${KASM_PASSWORD}" | \
-                kasmvncpasswd -u "${KASM_USER}" -rwo "${KASMPASSWD_FILE}" >/dev/null 2>&1
+                kasmvncpasswd -u "${KASM_USER}" -wo "${KASMPASSWD_FILE}" >/dev/null 2>&1
             chmod 600 "${KASMPASSWD_FILE}" 2>/dev/null || true
         else
             echo "================================================================================" >&2
@@ -152,7 +152,7 @@ if [ "${KASM_AUTH_ENABLED_LOWER}" = "true" ]; then
     elif [ -n "${KASM_PASSWORD}" ]; then
         echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Configuring credentials for user '${KASM_USER}' from environment variable..."
         printf "%s\n%s\n" "${KASM_PASSWORD}" "${KASM_PASSWORD}" | \
-            kasmvncpasswd -u "${KASM_USER}" -rwo "${KASMPASSWD_FILE}" >/dev/null 2>&1
+            kasmvncpasswd -u "${KASM_USER}" -wo "${KASMPASSWD_FILE}" >/dev/null 2>&1
         chmod 600 "${KASMPASSWD_FILE}" 2>/dev/null || true
     elif [ -f "${KASMPASSWD_FILE}" ]; then
         echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Using existing credentials from ${KASMPASSWD_FILE}."
@@ -177,7 +177,7 @@ if [ "${KASM_AUTH_ENABLED_LOWER}" = "true" ]; then
 else
     echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Authentication mode: DISABLED (Network-Level Protection)"
     if [ ! -f "${KASMPASSWD_FILE}" ]; then
-        printf "nopassword\nnopassword\n" | kasmvncpasswd -u default -rwo "${KASMPASSWD_FILE}" >/dev/null 2>&1 || true
+        printf "nopassword\nnopassword\n" | kasmvncpasswd -u default -wo "${KASMPASSWD_FILE}" >/dev/null 2>&1 || true
         chmod 600 "${KASMPASSWD_FILE}" 2>/dev/null || true
     fi
 fi

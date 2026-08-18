@@ -24,7 +24,7 @@ fi
 
 # Configure KasmVNC credentials representation
 printf "%s\n%s\n" "${PASSWORD}" "${PASSWORD}" | \
-    kasmvncpasswd -u "${KASM_USER}" -rwo "${KASMPASSWD_FILE}" >/dev/null 2>&1
+    kasmvncpasswd -u "${KASM_USER}" -wo "${KASMPASSWD_FILE}" >/dev/null 2>&1
 
 chmod 600 "${KASMPASSWD_FILE}" 2>/dev/null || true
 chown -R "${PUID}:${PGID}" /config/kasmvnc 2>/dev/null || true
