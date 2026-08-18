@@ -120,10 +120,6 @@ elif [ -x "/opt/brave.com/brave-origin/brave-origin" ]; then
     BRAVE_BIN="/opt/brave.com/brave-origin/brave-origin"
 fi
 
-if [ -f "/opt/brave.com/brave-origin/chrome-sandbox" ]; then
-    export CHROME_DEVEL_SANDBOX="/opt/brave.com/brave-origin/chrome-sandbox"
-fi
-
 if [ -z "${BRAVE_BIN}" ]; then
     echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Error: Brave Origin binary not found!" >&2
     set_status_atomic "ERROR"

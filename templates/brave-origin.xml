@@ -5,7 +5,7 @@
   <Registry>https://forgejo.foss.homes/shoy/-/packages/container/brave-origin</Registry>
   <Network>bridge</Network>
   <Privileged>false</Privileged>
-  <ExtraParams>--shm-size=1g --pids-limit 2048</ExtraParams>
+  <ExtraParams>--security-opt seccomp=unconfined --shm-size=1g --pids-limit 2048</ExtraParams>
 
   <Overview>Production-grade Brave Origin browser container running on Debian 13 Trixie Slim, accessed remotely via KasmVNC over HTTPS with unprivileged Chromium sandboxing, profile locking, and transaction-safe offline updates.</Overview>
 

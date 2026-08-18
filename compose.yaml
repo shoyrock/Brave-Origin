@@ -10,6 +10,8 @@ services:
     hostname: ${CONTAINER_HOSTNAME:-brave-origin}
     restart: unless-stopped
     shm_size: "1gb"
+    security_opt:
+      - seccomp:unconfined
     ports:
       - "${WEB_PORT:-8443}:${WEB_PORT:-8443}"
     environment:

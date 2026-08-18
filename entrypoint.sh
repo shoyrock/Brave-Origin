@@ -109,7 +109,6 @@ chown -R braveuser:braveuser /config /tmp/runtime-braveuser /tmp/brave-cache /tm
 if [ -f "/opt/brave.com/brave-origin/chrome-sandbox" ]; then
     chown root:root /opt/brave.com/brave-origin/chrome-sandbox 2>/dev/null || true
     chmod 4755 /opt/brave.com/brave-origin/chrome-sandbox 2>/dev/null || true
-    export CHROME_DEVEL_SANDBOX="/opt/brave.com/brave-origin/chrome-sandbox"
 fi
 
 # 5. SSL / TLS Certificate Setup

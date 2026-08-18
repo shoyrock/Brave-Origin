@@ -204,7 +204,6 @@ ENV PUID=1000 \
     ENABLE_GPU=true \
     ENABLE_AUDIO=true \
     DRI_NODE=/dev/dri/renderD128 \
-    CHROME_DEVEL_SANDBOX=/opt/brave.com/brave-origin/chrome-sandbox \
     BRAVE_FLAGS=""
 
 # Persistent browser profile, downloads, and Kasm configuration volume
