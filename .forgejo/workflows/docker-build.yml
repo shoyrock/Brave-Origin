@@ -27,8 +27,8 @@ jobs:
       packages: write
 
     env:
-      REGISTRY: 192.168.10.10:3100
-      IMAGE_NAME: 192.168.10.10:3100/shoy/brave-origin
+      REGISTRY: forgejo.foss.homes
+      IMAGE_NAME: forgejo.foss.homes/shoy/brave-origin
       LOCAL_IMAGE: brave-origin-kasmvnc:latest
       SMOKE_CONTAINER: brave-origin-ci-smoke
 
