@@ -103,6 +103,7 @@ rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 /tmp/*.pid /tmp/*.flag /run/lock/brave-ori
 
 chmod 1777 /tmp/.X11-unix /run/lock
 chmod 700 /tmp/runtime-braveuser /tmp/brave-cache
+chown -R braveuser:braveuser /config /tmp/runtime-braveuser /tmp/brave-cache /tmp/.X11-unix
 
 # Configure official Chromium SUID sandbox permissions
 if [ -f "/opt/brave.com/brave-origin/chrome-sandbox" ]; then
@@ -124,70 +125,7 @@ if [ ! -f "${CERT_FILE}" ] || [ ! -f "${KEY_FILE}" ]; then
     chmod 600 "${KEY_FILE}" "${CERT_FILE}"
 fi
 
-# 6. KasmVNC Authentication Setup
-KASMPASSWD_FILE="/config/kasmvnc/.kasmpasswd"
-
-if [ "${KASM_AUTH_ENABLED_LOWER}" = "true" ]; then
-    echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Authentication mode: ENABLED"
-    
-    # Credential precedence:
-    # 1. KASM_PASSWORD_FILE if explicitly configured and readable
-    # 2. KASM_PASSWORD if explicitly configured
-    # 3. Existing /config/kasmvnc/.kasmpasswd
-    if [ -n "${KASM_PASSWORD_FILE}" ]; then
-        if [ -f "${KASM_PASSWORD_FILE}" ]; then
-            KASM_PASSWORD="$(cat "${KASM_PASSWORD_FILE}" 2>/dev/null || echo "")"
-            if [ -z "${KASM_PASSWORD}" ]; then
-                echo "================================================================================" >&2
-                echo "[kasmvnc] ERROR: KASM_PASSWORD_FILE (${KASM_PASSWORD_FILE}) is empty or unreadable!" >&2
-                echo "================================================================================" >&2
-                exit 1
-            fi
-            echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Configuring credentials for user '${KASM_USER}' from secret file..."
-            printf "%s\n%s\n" "${KASM_PASSWORD}" "${KASM_PASSWORD}" | \
-                kasmvncpasswd -u "${KASM_USER}" -wo "${KASMPASSWD_FILE}" >/dev/null 2>&1
-            chmod 600 "${KASMPASSWD_FILE}" 2>/dev/null || true
-        else
-            echo "================================================================================" >&2
-            echo "[kasmvnc] ERROR: Configured KASM_PASSWORD_FILE (${KASM_PASSWORD_FILE}) not found inside container!" >&2
-            echo "Ensure host secret file is mounted into the container at this path." >&2
-            echo "================================================================================" >&2
-            exit 1
-        fi
-    elif [ -n "${KASM_PASSWORD}" ]; then
-        echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Configuring credentials for user '${KASM_USER}' from environment variable..."
-        printf "%s\n%s\n" "${KASM_PASSWORD}" "${KASM_PASSWORD}" | \
-            kasmvncpasswd -u "${KASM_USER}" -wo "${KASMPASSWD_FILE}" >/dev/null 2>&1
-        chmod 600 "${KASMPASSWD_FILE}" 2>/dev/null || true
-    elif [ -f "${KASMPASSWD_FILE}" ]; then
-        echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Using existing credentials from ${KASMPASSWD_FILE}."
-        chmod 600 "${KASMPASSWD_FILE}" 2>/dev/null || true
-    else
-        echo "================================================================================" >&2
-        echo "[kasmvnc] ERROR: KASM_AUTH_ENABLED=true but no authentication credentials exist!" >&2
-        echo "" >&2
-        echo "To configure credentials, choose one of the following methods:" >&2
-        echo "" >&2
-        echo "1. Set KASM_PASSWORD_FILE pointing to a mounted secret file inside container (Recommended):" >&2
-        echo "   KASM_PASSWORD_FILE=/run/secrets/kasm_password" >&2
-        echo "" >&2
-        echo "2. Set KASM_PASSWORD in your environment / .env file:" >&2
-        echo "   KASM_PASSWORD=MySecurePassword123!" >&2
-        echo "" >&2
-        echo "3. Or generate credentials interactively before starting the container:" >&2
-        echo "   docker compose run --rm brave-origin /usr/local/bin/reset-password.sh --generate" >&2
-        echo "================================================================================" >&2
-        exit 1
-    fi
-else
-    echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Authentication mode: DISABLED (Network-Level Protection)"
-    if [ ! -f "${KASMPASSWD_FILE}" ]; then
-        printf "nopassword\nnopassword\n" | kasmvncpasswd -u default -wo "${KASMPASSWD_FILE}" >/dev/null 2>&1 || true
-        chmod 600 "${KASMPASSWD_FILE}" 2>/dev/null || true
-    fi
-fi
-
-# 7. Configure KasmVNC YAML Settings (Explicit Port, Resolution & Encoding)
+# 6. Configure KasmVNC YAML Settings (Explicit Port, Resolution & Encoding)
 CONFIG_YAML="/config/kasmvnc/kasmvnc.yaml"
 if [ ! -f "${CONFIG_YAML}" ]; then
     echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Initializing KasmVNC configuration..."
@@ -213,10 +151,89 @@ else
     sed -i "s/hw3d: true/hw3d: false/g" "${CONFIG_YAML}" || true
 fi
 
-# Create user VNC symlinks
+# Create user VNC symlinks and set permissions
 ln -snf /config/kasmvnc/kasmvnc.yaml /config/.vnc/kasmvnc.yaml
-ln -snf /config/kasmvnc/.kasmpasswd /config/.kasmpasswd
-ln -snf /config/kasmvnc/.kasmpasswd /config/.vnc/passwd 2>/dev/null || true
+ln -snf /config/kasmvnc/.kasmpasswd /config/.kasmpasswd 2>/dev/null || true
+chown -R braveuser:braveuser /config /tmp/runtime-braveuser /tmp/brave-cache /tmp/.X11-unix
+
+# 7. KasmVNC Authentication Setup
+KASMPASSWD_FILE="/config/kasmvnc/.kasmpasswd"
+
+if [ "${KASM_AUTH_ENABLED_LOWER}" = "true" ]; then
+    echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Authentication mode: ENABLED"
+    
+    # Credential precedence:
+    # 1. KASM_PASSWORD_FILE if explicitly configured and readable
+    # 2. KASM_PASSWORD if explicitly configured
+    # 3. Existing /config/kasmvnc/.kasmpasswd or /config/.kasmpasswd
+    if [ -n "${KASM_PASSWORD_FILE}" ]; then
+        if [ -f "${KASM_PASSWORD_FILE}" ]; then
+            KASM_PASSWORD="$(cat "${KASM_PASSWORD_FILE}" 2>/dev/null || echo "")"
+            if [ -z "${KASM_PASSWORD}" ]; then
+                echo "================================================================================" >&2
+                echo "[kasmvnc] ERROR: KASM_PASSWORD_FILE (${KASM_PASSWORD_FILE}) is empty or unreadable!" >&2
+                echo "================================================================================" >&2
+                exit 1
+            fi
+            echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Configuring credentials for user '${KASM_USER}' from secret file..."
+            rm -f "/config/.kasmpasswd" "${KASMPASSWD_FILE}" 2>/dev/null || true
+            printf "%s\n%s\nn\n" "${KASM_PASSWORD}" "${KASM_PASSWORD}" | \
+                gosu braveuser kasmvncpasswd -u "${KASM_USER}" -wo >/dev/null 2>&1
+            if [ -s "/config/.kasmpasswd" ]; then
+                cp -f "/config/.kasmpasswd" "${KASMPASSWD_FILE}" 2>/dev/null || true
+            fi
+            chmod 600 "${KASMPASSWD_FILE}" "/config/.kasmpasswd" 2>/dev/null || true
+        else
+            echo "================================================================================" >&2
+            echo "[kasmvnc] ERROR: Configured KASM_PASSWORD_FILE (${KASM_PASSWORD_FILE}) not found inside container!" >&2
+            echo "Ensure host secret file is mounted into the container at this path." >&2
+            echo "================================================================================" >&2
+            exit 1
+        fi
+    elif [ -n "${KASM_PASSWORD}" ]; then
+        echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Configuring credentials for user '${KASM_USER}' from environment variable..."
+        rm -f "/config/.kasmpasswd" "${KASMPASSWD_FILE}" 2>/dev/null || true
+        printf "%s\n%s\nn\n" "${KASM_PASSWORD}" "${KASM_PASSWORD}" | \
+            gosu braveuser kasmvncpasswd -u "${KASM_USER}" -wo >/dev/null 2>&1
+        if [ -s "/config/.kasmpasswd" ]; then
+            cp -f "/config/.kasmpasswd" "${KASMPASSWD_FILE}" 2>/dev/null || true
+        fi
+        chmod 600 "${KASMPASSWD_FILE}" "/config/.kasmpasswd" 2>/dev/null || true
+    elif [ -s "${KASMPASSWD_FILE}" ] || [ -s "/config/.kasmpasswd" ]; then
+        if [ ! -s "${KASMPASSWD_FILE}" ] && [ -s "/config/.kasmpasswd" ]; then
+            cp -f "/config/.kasmpasswd" "${KASMPASSWD_FILE}" 2>/dev/null || true
+        elif [ ! -s "/config/.kasmpasswd" ] && [ -s "${KASMPASSWD_FILE}" ]; then
+            cp -f "${KASMPASSWD_FILE}" "/config/.kasmpasswd" 2>/dev/null || true
+        fi
+        echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Using existing credentials from ${KASMPASSWD_FILE}."
+        chmod 600 "${KASMPASSWD_FILE}" "/config/.kasmpasswd" 2>/dev/null || true
+    else
+        echo "================================================================================" >&2
+        echo "[kasmvnc] ERROR: KASM_AUTH_ENABLED=true but no authentication credentials exist!" >&2
+        echo "" >&2
+        echo "To configure credentials, choose one of the following methods:" >&2
+        echo "" >&2
+        echo "1. Set KASM_PASSWORD_FILE pointing to a mounted secret file inside container (Recommended):" >&2
+        echo "   KASM_PASSWORD_FILE=/run/secrets/kasm_password" >&2
+        echo "" >&2
+        echo "2. Set KASM_PASSWORD in your environment / .env file:" >&2
+        echo "   KASM_PASSWORD=MySecurePassword123!" >&2
+        echo "" >&2
+        echo "3. Or generate credentials interactively before starting the container:" >&2
+        echo "   docker compose run --rm brave-origin /usr/local/bin/reset-password.sh --generate" >&2
+        echo "================================================================================" >&2
+        exit 1
+    fi
+else
+    echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Authentication mode: DISABLED (Network-Level Protection)"
+    if [ ! -s "${KASMPASSWD_FILE}" ] && [ ! -s "/config/.kasmpasswd" ]; then
+        printf "nopassword\nnopassword\nn\n" | gosu braveuser kasmvncpasswd -u default -wo >/dev/null 2>&1 || true
+        if [ -s "/config/.kasmpasswd" ]; then
+            cp -f "/config/.kasmpasswd" "${KASMPASSWD_FILE}" 2>/dev/null || true
+        fi
+        chmod 600 "${KASMPASSWD_FILE}" "/config/.kasmpasswd" 2>/dev/null || true
+    fi
+fi
 
 # 8. User and Storage Permissions Handling
 chown -R braveuser:braveuser /config /tmp/runtime-braveuser /tmp/brave-cache /tmp/.X11-unix
