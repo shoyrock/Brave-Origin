@@ -94,7 +94,7 @@ fi
 # Remove legacy plaintext credentials file if previously generated (preserving .kasmpasswd)
 rm -f /config/kasmvnc/credentials.txt 2>/dev/null || true
 
-rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 /tmp/*.pid /tmp/*.flag /run/lock/brave-origin-update.lock 2>/dev/null || true
+rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 /tmp/*.pid /tmp/*.flag /run/lock/brave-origin-update.lock /config/profile/Singleton* 2>/dev/null || true
 
 chmod 1777 /tmp/.X11-unix /run/lock
 chmod 700 /tmp/runtime-braveuser /tmp/brave-cache
