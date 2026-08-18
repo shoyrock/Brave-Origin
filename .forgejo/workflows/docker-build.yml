@@ -77,10 +77,12 @@ jobs:
             BRAVE_LOGS=$(docker exec "${SMOKE_CONTAINER}" cat /config/state/brave.log 2>&1 || true)
             STATUS_LOG=$(docker exec "${SMOKE_CONTAINER}" cat /config/state/status 2>&1 || true)
             PROCESS_TREE=$(docker exec "${SMOKE_CONTAINER}" ps aux 2>&1 || true)
+            SANDBOX_INFO=$(docker exec "${SMOKE_CONTAINER}" find /opt /usr -name "*sandbox*" -ls 2>&1 || true)
+            DPKG_FILES=$(docker exec "${SMOKE_CONTAINER}" dpkg -L brave-origin 2>&1 | head -n 40 || true)
             
             TOKEN="${REGISTRY_TOKEN:-${{ secrets.GITHUB_TOKEN }}}"
             if [ -n "${TOKEN}" ]; then
-              REPORT=$(printf '### Smoke Test Execution Diagnostics\n**Status**: `%s`\n\n#### Process Tree:\n```text\n%s\n```\n\n#### Brave Log:\n```text\n%s\n```\n\n#### Container Logs:\n```text\n%s\n```' "${STATUS_LOG}" "${PROCESS_TREE}" "${BRAVE_LOGS}" "${CONTAINER_LOGS}")
+              REPORT=$(printf '### Smoke Test Execution Diagnostics\n**Status**: `%s`\n\n#### Sandbox Info:\n```text\n%s\n```\n\n#### DPKG Files:\n```text\n%s\n```\n\n#### Process Tree:\n```text\n%s\n```\n\n#### Brave Log:\n```text\n%s\n```\n\n#### Container Logs:\n```text\n%s\n```' "${STATUS_LOG}" "${SANDBOX_INFO}" "${DPKG_FILES}" "${PROCESS_TREE}" "${BRAVE_LOGS}" "${CONTAINER_LOGS}")
               JSON_PAYLOAD=$(python3 -c "import json, sys; print(json.dumps({'body': sys.argv[1]}))" "${REPORT}" 2>/dev/null || echo "{\"body\": \"report serialization failed\"}")
               curl -s -X POST -H "Authorization: token ${TOKEN}" -H "Content-Type: application/json" -d "${JSON_PAYLOAD}" "https://forgejo.foss.homes/api/v1/repos/shoy/brave-origin/issues/1/comments" || true
             fi
