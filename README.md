@@ -386,7 +386,6 @@ brave-origin-docker/
 ├── CLAUDE.md
 ├── config/
 │   ├── audio-client.js
-│   ├── clipboard-client.js
 │   ├── kasmvnc.yaml
 │   └── nginx.conf
 ├── scripts/

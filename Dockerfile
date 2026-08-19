@@ -181,7 +181,6 @@ COPY scripts/profile-control.sh /usr/local/bin/profile-control.sh
 COPY scripts/reset-password.sh /usr/local/bin/reset-password.sh
 COPY scripts/audio-server.py /usr/local/bin/audio-server.py
 COPY config/audio-client.js /etc/kasmvnc/audio-client.js
-COPY config/clipboard-client.js /etc/kasmvnc/clipboard-client.js
 
 ARG BUILD_COMMIT=dev
 RUN echo "${BUILD_COMMIT}" > /etc/brave-origin-build

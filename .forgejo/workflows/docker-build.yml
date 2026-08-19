@@ -48,21 +48,23 @@ jobs:
           docker version
           docker info | grep -E 'Server Version|Operating System|Architecture|CPUs|Total Memory' || true
 
-      - name: Verify Audio / Clipboard Structural Separation
+      - name: Verify Pristine Upstream KasmVNC Web Client (Zero Custom Clipboard Code)
         shell: bash
         run: |
           set -euo pipefail
           echo "========================================================"
-          echo " Verifying Mechanical Code Boundaries & Separation"
+          echo " Verifying Pristine Upstream KasmVNC Client & Zero Clipboard Shims"
           echo "========================================================"
-          # 1. audio-client.js must contain zero clipboard logic
+          # 1. Custom clipboard-client.js must be completely removed
+          if [ -f "config/clipboard-client.js" ]; then
+            echo "ERROR: config/clipboard-client.js exists! Must be removed." >&2
+            exit 1
+          fi
+          # 2. audio-client.js must contain zero clipboard logic
           ! grep -E 'navigator\.clipboard|clipboardPasteFrom|clipboardText|clipboardUp|clipboardDown|clipboardSeamless' config/audio-client.js
-          # 2. clipboard-client.js must contain zero audio logic
-          ! grep -E 'AudioContext|webkitAudioContext|createGain|createBuffer|/audio|playPCMChunk|nextPlayTime|JITTER_BUFFER_SEC|kasm-audio-widget' config/clipboard-client.js
-          # 3. Initialization guards must exist
-          grep 'window.__BRAVE_ORIGIN_CLIPBOARD_INITIALIZED__' config/clipboard-client.js
+          # 3. Audio initialization guard must exist
           grep 'window.__BRAVE_ORIGIN_AUDIO_INITIALIZED__' config/audio-client.js
-          echo "Code boundary assertions: PASSED"
+          echo "Pristine client and separation assertions: PASSED"
 
       - name: Build Brave Origin Docker Image
         shell: bash
@@ -168,8 +170,8 @@ jobs:
           CLIP_COUNT=$(echo "${HTML_CONTENT}" | grep -o 'clipboard-client\.js' | wc -l)
           AUDIO_COUNT=$(echo "${HTML_CONTENT}" | grep -o 'audio-client\.js' | wc -l)
           echo "Script tags found: clipboard=${CLIP_COUNT}, audio=${AUDIO_COUNT}"
-          if [ "${CLIP_COUNT}" -eq 1 ] && [ "${AUDIO_COUNT}" -eq 1 ]; then
-            echo "TEST 1 Script tag counts verified: SUCCESS"
+          if [ "${CLIP_COUNT}" -eq 0 ] && [ "${AUDIO_COUNT}" -eq 1 ]; then
+            echo "TEST 1 Script tag counts verified (zero custom clipboard, audio active): SUCCESS"
           else
             echo "TEST 1 Failed: unexpected script tag counts (clip=${CLIP_COUNT}, audio=${AUDIO_COUNT})" >&2; exit 1
           fi

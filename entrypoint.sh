@@ -236,19 +236,10 @@ else
     fi
 fi
 
-# 8. Web Client Extensions: Seamless Clipboard & Optional Audio Subsystem
+# 8. Web Client Extensions: Optional Audio Subsystem (Pristine Upstream KasmVNC for Clipboard)
 START_TS="$(date +%s)"
-
-# 8a. Standalone Seamless Bidirectional Clipboard (Always Enabled)
-if [ -f "/etc/kasmvnc/clipboard-client.js" ]; then
-    cp -f /etc/kasmvnc/clipboard-client.js /usr/share/kasmvnc/www/clipboard-client.js 2>/dev/null || true
-    BUILD_COMMIT="$(cat /etc/brave-origin-build 2>/dev/null || echo "${START_TS}")"
-    sed -i "s|__BUILD_COMMIT__|${BUILD_COMMIT}|g" /usr/share/kasmvnc/www/clipboard-client.js 2>/dev/null || true
-    chmod 644 /usr/share/kasmvnc/www/clipboard-client.js 2>/dev/null || true
-    # Remove any existing clipboard script tags for idempotency
-    sed -i 's|<script src="clipboard-client\.js[^"]*"></script>||g' /usr/share/kasmvnc/www/index.html 2>/dev/null || true
-    sed -i "s|</body>|<script src=\"clipboard-client.js?v=${START_TS}\"></script></body>|" /usr/share/kasmvnc/www/index.html 2>/dev/null || true
-fi
+rm -f /usr/share/kasmvnc/www/clipboard-client.js 2>/dev/null || true
+sed -i 's|<script src="clipboard-client\.js[^"]*"></script>||g' /usr/share/kasmvnc/www/index.html 2>/dev/null || true
 
 # 8b. Standalone Low-Latency Web Audio (Active only when ENABLE_AUDIO=true)
 if [ "${ENABLE_AUDIO:-true}" = "true" ]; then
