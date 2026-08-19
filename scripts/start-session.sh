@@ -25,8 +25,7 @@ chmod 700 "${XDG_RUNTIME_DIR}"
 
 # 1. Start D-Bus Session Daemon
 if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
-    eval $(dbus-daemon --session --fork --print-address --print-pid)
-    export DBUS_SESSION_BUS_ADDRESS
+    eval $(dbus-launch --sh-syntax)
 fi
 
 # 2. Start PulseAudio Virtual Sink (if ENABLE_AUDIO=true)
@@ -44,30 +43,42 @@ fi
 
 # 3. Start Selkies Streaming Server (Smithay Wayland Display)
 echo "[start-session] Starting Selkies Wayland display & streaming server on 127.0.0.1:8082..."
+export SELKIES_AUDIO_ENABLED="${AUDIO_ENABLED}"
+export SELKIES_ENABLE_DUAL_MODE=false
+export CUSTOM_WS_PORT=8082
+export SELKIES_PORT=8082
+
 python3 -m selkies \
     --mode=websockets \
-    --addr=127.0.0.1 \
-    --port=8082 \
-    --audio_enabled="${AUDIO_ENABLED}" \
     > /config/state/selkies.log 2>&1 &
 SELKIES_PID=$!
 echo "${SELKIES_PID}" > /config/state/selkies.pid
 
 # 4. Wait for Wayland socket to be created by Pixelflux / Smithay
-SOCKET_PATH="${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}"
-echo "[start-session] Waiting for Wayland display socket at ${SOCKET_PATH}..."
+echo "[start-session] Waiting for Wayland display socket in ${XDG_RUNTIME_DIR}..."
 TIMEOUT=30
 ELAPSED=0
-while [ ! -S "${SOCKET_PATH}" ]; do
+WAYLAND_SOCKET=""
+while [ -z "${WAYLAND_SOCKET}" ]; do
+    for s in "${XDG_RUNTIME_DIR}"/wayland-*; do
+        if [ -S "${s}" ]; then
+            WAYLAND_SOCKET="${s}"
+            export WAYLAND_DISPLAY="$(basename "${s}")"
+            break
+        fi
+    done
+    if [ -n "${WAYLAND_SOCKET}" ]; then
+        break
+    fi
     sleep 0.2
     ELAPSED=$((ELAPSED + 1))
     if [ "${ELAPSED}" -ge "$((TIMEOUT * 5))" ]; then
-        echo "[start-session] ERROR: Timeout waiting for Wayland socket at ${SOCKET_PATH}!" >&2
+        echo "[start-session] ERROR: Timeout waiting for Wayland socket in ${XDG_RUNTIME_DIR}!" >&2
         cat /config/state/selkies.log >&2 || true
         exit 1
     fi
 done
-echo "[start-session] Wayland socket detected and ready at ${SOCKET_PATH}!"
+echo "[start-session] Wayland socket detected and ready: ${WAYLAND_SOCKET} (WAYLAND_DISPLAY=${WAYLAND_DISPLAY})"
 
 # 5. Start Labwc Wayland Window Manager
 echo "[start-session] Starting Labwc window manager..."
@@ -98,7 +109,7 @@ GPU_FLAGS=""
 if [ -e "/dev/dri/renderD128" ]; then
     echo "[start-session] GPU /dev/dri/renderD128 detected - enabling hardware acceleration"
     export LIBVA_DRIVER_NAME_OVERRIDE=""
-    GPU_FLAGS="--enable-gpu-rasterization --enable-zero-copy --ignore-gpu-blocklist"
+    GPU_FLAGS="--enable-gpu-rasterization --enable-zero-copy --ignore-gpu-blocklist --disable-features=Vulkan"
 else
     echo "[start-session] No /dev/dri GPU device detected - running with software rasterization"
     GPU_FLAGS="--disable-gpu --disable-gpu-compositing"

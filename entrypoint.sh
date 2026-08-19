@@ -144,7 +144,7 @@ echo " Update Interval:     ${UPDATE_INTERVAL:-21600}s"
 echo "========================================================"
 
 # 9. Launch Native Wayland Session under Unprivileged User with Profile Lock
-su - braveuser -c "/usr/local/bin/profile-control.sh run /usr/local/bin/start-session.sh" >> /config/state/session.log 2>&1 &
+su - braveuser -c "ENABLE_AUDIO=${ENABLE_AUDIO:-true} /usr/local/bin/start-session.sh" >> /config/state/session.log 2>&1 &
 SESSION_PID=$!
 
 # 10. Background Watchdog and Periodic Updater Loop
@@ -157,7 +157,7 @@ while true; do
     # Check if main session process has terminated unexpectedly
     if ! kill -0 "${SESSION_PID}" 2>/dev/null; then
         echo "[watchdog] [$(date -u +"%Y-%m-%d %H:%M:%S UTC")] Session process terminated! Restarting session..."
-        su - braveuser -c "/usr/local/bin/profile-control.sh run /usr/local/bin/start-session.sh" >> /config/state/session.log 2>&1 &
+        su - braveuser -c "ENABLE_AUDIO=${ENABLE_AUDIO:-true} /usr/local/bin/start-session.sh" >> /config/state/session.log 2>&1 &
         SESSION_PID=$!
     fi
     

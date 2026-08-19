@@ -68,7 +68,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     mesa-vulkan-drivers \
     mesa-va-drivers \
     intel-media-va-driver \
-    i965-va-driver-shaders \
     libva2 \
     libva-drm2 \
     libva-wayland2 \
@@ -115,7 +114,8 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
     rm -rf /var/lib/apt/lists/*
 
 # 4. Create Unprivileged Non-Root User (braveuser)
-RUN groupadd -g 1000 braveuser && \
+RUN groupadd -r render 2>/dev/null || true && \
+    groupadd -g 1000 braveuser && \
     useradd -u 1000 -g braveuser -G audio,video,render -m -s /bin/bash braveuser && \
     mkdir -p /config /tmp/runtime-braveuser /tmp/brave-cache /etc/nginx/ssl /usr/share/selkies/web && \
     chmod 700 /tmp/runtime-braveuser && \
