@@ -95,7 +95,9 @@ if [ ! -f "/config/.config/labwc/rc.xml" ]; then
     <cornerRadius>4</cornerRadius>
   </theme>
   <windowRules>
-    <windowRule identifier="*" serverDecoration="no" />
+    <windowRule identifier="*" serverDecoration="no">
+      <action name="Maximize" />
+    </windowRule>
   </windowRules>
 </labwc_config>
 EOF
@@ -157,7 +159,5 @@ exec /opt/brave.com/brave-origin/brave \
     --no-default-browser-check \
     --password-store=basic \
     --start-maximized \
-    --window-position=0,0 \
-    --window-size=1920,1080 \
     ${GPU_FLAGS} \
     "$@" 2>&1 | tee -a /config/state/brave.log
