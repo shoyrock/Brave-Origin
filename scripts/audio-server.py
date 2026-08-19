@@ -15,7 +15,7 @@ import urllib.parse
 
 PORT = int(os.environ.get("AUDIO_PORT", "4901"))
 BIND_HOST = os.environ.get("BIND_HOST", "127.0.0.1")
-PULSE_SOURCE = os.environ.get("PULSE_SOURCE", "auto_null.monitor")
+PULSE_SOURCE = os.environ.get("PULSE_SOURCE", "@DEFAULT_MONITOR@")
 AUDIO_SESSION_TOKEN = os.environ.get("AUDIO_SESSION_TOKEN", "").strip()
 
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"

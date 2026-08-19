@@ -137,9 +137,10 @@ if [ "${ENABLE_AUDIO:-true}" = "true" ]; then
             fi
             sleep 0.1
         done
-        # Ensure default virtual null sink exists for Brave capture
-        pactl load-module module-null-sink sink_name=auto_null sink_properties=device.description=Auto_Null >/dev/null 2>&1 || true
-        pactl set-default-sink auto_null >/dev/null 2>&1 || true
+        # Ensure at least one sink is available for PulseAudio
+        if ! pactl list short sinks | grep -q 's16le\|float32'; then
+            pactl load-module module-null-sink sink_name=auto_null sink_properties=device.description=Auto_Null >/dev/null 2>&1 || true
+        fi
     fi
     start_audio_relay
 fi
