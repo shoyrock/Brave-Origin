@@ -3,6 +3,7 @@ name: Build & Smoke Test Brave Origin Wayland Docker Image
 on:
   push:
     branches:
+      - main
       - feature/wayland-selkies
   workflow_dispatch:
 
