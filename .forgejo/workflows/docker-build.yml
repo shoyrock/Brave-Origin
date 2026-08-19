@@ -68,8 +68,8 @@ jobs:
             --env KASM_AUTH_ENABLED=false \
             "${LOCAL_IMAGE}"
 
-          echo "Waiting 15 seconds for Selkies, Labwc & Brave Origin Wayland startup..."
-          sleep 15
+          echo "Waiting 18 seconds for Selkies, Labwc & Brave Origin Wayland startup..."
+          sleep 18
 
           echo "--- Checking Container Process Tree ---"
           docker exec "${SMOKE_CONTAINER}" ps -ef
