@@ -240,18 +240,19 @@ fi
 if [ "${ENABLE_AUDIO:-true}" = "true" ]; then
     AUDIO_SESSION_TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(16))' 2>/dev/null || head -c 16 /dev/urandom | xxd -p 2>/dev/null || date +%s%N)"
     export AUDIO_SESSION_TOKEN
+    START_TS="$(date +%s)"
     if [ -f "/etc/kasmvnc/audio-client.js" ]; then
         cp -f /etc/kasmvnc/audio-client.js /usr/share/kasmvnc/www/audio-client.js 2>/dev/null || true
         # Inject ephemeral token directly into served JavaScript file
         sed -i "s|__AUDIO_SESSION_TOKEN__|${AUDIO_SESSION_TOKEN}|g" /usr/share/kasmvnc/www/audio-client.js 2>/dev/null || true
         chmod 644 /usr/share/kasmvnc/www/audio-client.js 2>/dev/null || true
-        if ! grep -q 'audio-client.js' /usr/share/kasmvnc/www/index.html 2>/dev/null; then
-            sed -i 's|</body>|<script src="audio-client.js"></script></body>|' /usr/share/kasmvnc/www/index.html 2>/dev/null || true
-        fi
+        # Remove any existing audio script tags to prevent duplicate tags across restarts
+        sed -i 's|<script src="audio-client\.js[^"]*"></script>||g' /usr/share/kasmvnc/www/index.html 2>/dev/null || true
+        sed -i "s|</body>|<script src=\"audio-client.js?v=${START_TS}\"></script></body>|" /usr/share/kasmvnc/www/index.html 2>/dev/null || true
     fi
 else
     export AUDIO_SESSION_TOKEN=""
-    sed -i 's|<script src="audio-client.js"></script>||g' /usr/share/kasmvnc/www/index.html 2>/dev/null || true
+    sed -i 's|<script src="audio-client\.js[^"]*"></script>||g' /usr/share/kasmvnc/www/index.html 2>/dev/null || true
 fi
 
 # 9. User and Storage Permissions Handling

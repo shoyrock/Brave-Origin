@@ -43,6 +43,7 @@
   <Config Name="Display Height" Target="DISPLAY_HEIGHT" Default="1080" Description="Virtual desktop height in pixels." Type="Variable" Display="advanced" Required="false" Mask="false">1080</Config>
 
   <!-- Features -->
+  <Config Name="Enable Audio" Target="ENABLE_AUDIO" Default="true" Description="Enable PulseAudio and Single-Origin browser audio streaming." Type="Variable" Display="always" Required="false" Mask="false">true</Config>
   <Config Name="Automatic Updates" Target="AUTO_UPDATE" Default="true" Description="Enable background transaction-safe offline browser updates." Type="Variable" Display="always" Required="false" Mask="false">true</Config>
-  <Config Name="Hardware Acceleration" Target="ENABLE_GPU" Default="false" Description="Enable hardware acceleration (requires Intel/AMD GPU device passthrough)." Type="Variable" Display="always" Required="false" Mask="false">false</Config>
+  <Config Name="Hardware Acceleration" Target="ENABLE_GPU" Default="false" Description="Enable hardware acceleration (requires Intel/AMD GPU device passthrough)." Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
 </Container>
