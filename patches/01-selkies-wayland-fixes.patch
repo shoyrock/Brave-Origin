@@ -45,37 +45,40 @@ index ed3c7c9..af8d545 100644
  
    if (isSharedMode) {
 diff --git a/src/selkies/input_handler.py b/src/selkies/input_handler.py
-index e745f81..5c656a8 100644
+index e745f81..64fa92f 100644
 --- a/src/selkies/input_handler.py
 +++ b/src/selkies/input_handler.py
-@@ -4936,33 +4936,47 @@ class WebRTCInput:
+@@ -4934,35 +4934,49 @@ class WebRTCInput:
+     async def _app_clipboard_read(self, use_binary: bool) -> tuple:
+         """Read the selection of the compositor the apps use over the pixelflux
          data-control ABI; (None, None) when it is empty or unreadable."""
++        wl_target_display = str(self._app_wayland_display())
          read_fn = getattr(self.wayland_input, 'clipboard_read_app', None)
          types_fn = getattr(self.wayland_input, 'clipboard_types_app', None)
 -        if read_fn is None or types_fn is None:
 -            # pixelflux builds without the app-compositor data-control ABI
 -            # report no data rather than failing the clipboard path.
 -            return None, None
-         display = self._app_wayland_display()
+-        display = self._app_wayland_display()
          loop = asyncio.get_running_loop()
 +        if read_fn is not None and types_fn is not None:
 +            try:
 +                available_types = await loop.run_in_executor(
-+                    None, types_fn, display)
++                    None, types_fn, wl_target_display)
 +                if use_binary:
 +                    image_mimes = ['image/png', 'image/jpeg', 'image/bmp', 'image/webp',
 +                                   'image/svg+xml', 'image/svg']
 +                    target_mime = next((m for m in image_mimes if m in available_types), None)
 +                    if target_mime:
 +                        data = await loop.run_in_executor(
-+                            None, read_fn, display, target_mime)
++                            None, read_fn, wl_target_display, target_mime)
 +                        if data:
 +                            return bytes(data), target_mime
 +                text_mimes = ['text/plain;charset=utf-8', 'text/plain',
 +                              'UTF8_STRING', 'STRING', 'TEXT']
 +                source_mime = next((m for m in text_mimes if m in available_types), None)
 +                if source_mime:
-+                    data = await loop.run_in_executor(None, read_fn, display, source_mime)
++                    data = await loop.run_in_executor(None, read_fn, wl_target_display, source_mime)
 +                    if data is not None:
 +                        return data.decode('utf-8', errors='replace'), 'text/plain'
 +            except Exception as e:
@@ -102,12 +105,12 @@ index e745f81..5c656a8 100644
 -                if data is not None:
 -                    return data.decode('utf-8', errors='replace'), 'text/plain'
 +            env = os.environ.copy()
-+            env["WAYLAND_DISPLAY"] = display
++            env["WAYLAND_DISPLAY"] = wl_target_display
 +            if "XDG_RUNTIME_DIR" not in env:
 +                env["XDG_RUNTIME_DIR"] = "/tmp/runtime-braveuser"
-+            proc_r = await asyncio.create_subprocess_exec(
++            proc_r = await subprocess.create_subprocess_exec(
 +                "wl-paste", "--type", "text/plain;charset=utf-8", "--no-newline",
-+                stdout=subprocess.PIPE, stderr=None,
++                stdout=subprocess.PIPE,
 +                env=env
 +            )
 +            stdout, _ = await self._communicate_or_kill(proc_r, 1, "wl-paste")
@@ -119,15 +122,35 @@ index e745f81..5c656a8 100644
          return None, None
  
      async def read_clipboard(self, use_binary: bool = False) -> tuple:
-@@ -5107,14 +5121,33 @@ class WebRTCInput:
-                     "UTF8_STRING", "STRING", "TEXT")]
-             else:
-                 entries = [(mime_type, input_bytes)]
+@@ -5090,6 +5104,7 @@ class WebRTCInput:
+         self._clipboard_last_bytes = input_bytes
+ 
+         if self.is_wayland:
++            wl_target_display = str(self._app_wayland_display())
+             # pixelflux's own selection is set in-process; a separate app
+             # compositor's through the data-control client.
+             if not self._has_separate_app_compositor():
+@@ -5101,20 +5116,39 @@ class WebRTCInput:
+                     return False
+             # Apps paste whichever mime they prefer, so text is offered under
+             # every conventional text target.
+-            if mime_type == "text/plain":
+-                entries = [(m, input_bytes) for m in (
+-                    "text/plain;charset=utf-8", "text/plain",
+-                    "UTF8_STRING", "STRING", "TEXT")]
+-            else:
+-                entries = [(mime_type, input_bytes)]
 +            write_fn = getattr(self.wayland_input, 'clipboard_write_app', None)
 +            if write_fn is not None:
++                if mime_type == "text/plain":
++                    entries = [(m, input_bytes) for m in (
++                        "text/plain;charset=utf-8", "text/plain",
++                        "UTF8_STRING", "STRING", "TEXT")]
++                else:
++                    entries = [(mime_type, input_bytes)]
 +                try:
 +                    await asyncio.get_running_loop().run_in_executor(
-+                        None, write_fn, self._app_wayland_display(), entries)
++                        None, write_fn, wl_target_display, entries)
 +                    return True
 +                except Exception as e:
 +                    logger_webrtc_input.warning(f"data-control clipboard write failed: {e}")
@@ -139,13 +162,13 @@ index e745f81..5c656a8 100644
 -                    self._app_wayland_display(), entries)
 -                return True
 +                env = os.environ.copy()
-+                env["WAYLAND_DISPLAY"] = display
++                env["WAYLAND_DISPLAY"] = wl_target_display
 +                if "XDG_RUNTIME_DIR" not in env:
 +                    env["XDG_RUNTIME_DIR"] = "/tmp/runtime-braveuser"
 +                target_type = mime_type if mime_type and mime_type != "text/plain" else "text/plain;charset=utf-8"
-+                proc_w = await asyncio.create_subprocess_exec(
++                proc_w = await subprocess.create_subprocess_exec(
 +                    "wl-copy", "--type", target_type,
-+                    stdin=subprocess.PIPE, stdout=None, stderr=None,
++                    stdin=subprocess.PIPE,
 +                    env=env
 +                )
 +                await self._communicate_or_kill(proc_w, 2, "wl-copy", input=input_bytes)
@@ -154,7 +177,7 @@ index e745f81..5c656a8 100644
              except Exception as e:
 -                logger_webrtc_input.warning(f"data-control clipboard write failed: {e}")
 -                return False
-+                logger_webrtc_input.warning(f"wl-copy fallback failed: {e}")
++                logger_webrtc_input.warning(f"wl-copy fallback failed: {e}", exc_info=True)
 +            return False
  
          env = os.environ.copy()
