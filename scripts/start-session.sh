@@ -31,9 +31,7 @@ fi
 # 2. Start PulseAudio Virtual Sink (if ENABLE_AUDIO=true)
 if [ "${ENABLE_AUDIO:-true}" = "true" ]; then
     echo "[start-session] Initializing PulseAudio virtual sink..."
-    mkdir -p "${XDG_RUNTIME_DIR}/pulse"
-    pulseaudio --start --exit-idle-time=-1 --daemonize=true || true
-    pactl load-module module-native-protocol-unix auth-anonymous=1 socket="${XDG_RUNTIME_DIR}/pulse/native" 2>/dev/null || true
+    pulseaudio --exit-idle-time=-1 --daemonize=true || true
     pactl load-module module-null-sink sink_name=auto_null sink_properties=device.description="Virtual_Null_Output" 2>/dev/null || true
     pactl set-default-sink auto_null 2>/dev/null || true
     export AUDIO_ENABLED=true
