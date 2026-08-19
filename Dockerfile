@@ -180,6 +180,7 @@ COPY scripts/profile-control.sh /usr/local/bin/profile-control.sh
 COPY scripts/reset-password.sh /usr/local/bin/reset-password.sh
 COPY scripts/audio-server.py /usr/local/bin/audio-server.py
 COPY config/audio-client.js /etc/kasmvnc/audio-client.js
+COPY config/clipboard-client.js /etc/kasmvnc/clipboard-client.js
 
 RUN chmod +x /usr/local/bin/entrypoint.sh \
              /usr/local/bin/start-session.sh \
