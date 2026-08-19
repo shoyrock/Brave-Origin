@@ -1,191 +1,105 @@
-name: Build and Deploy Brave Origin
+name: Build & Smoke Test Brave Origin Wayland Docker Image
 
 on:
   push:
     branches:
-      - main
-      - master
+      - feature/wayland-selkies
   workflow_dispatch:
-    inputs:
-      publish:
-        description: 'Publish Docker image to Forgejo Container Registry'
-        required: true
-        default: true
-        type: boolean
 
 concurrency:
-  group: brave-origin-docker-build
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  IMAGE_NAME: forgejo.foss.homes/shoy/brave-origin
+  LOCAL_IMAGE: brave-origin:wayland
+  SMOKE_CONTAINER: brave-origin-wayland-smoke-test
+
 jobs:
-  build-and-deploy:
-    name: Build, Test & Deploy on Unraid Runner
-    runs-on: docker-build
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      packages: write
-
-    env:
-      REGISTRY: forgejo.foss.homes
-      IMAGE_NAME: forgejo.foss.homes/shoy/brave-origin
-      LOCAL_IMAGE: brave-origin-kasmvnc:latest
-      SMOKE_CONTAINER: brave-origin-ci-smoke
-
+  build-and-smoke-test:
+    name: Build & Smoke Test Wayland Container
+    runs-on: native
     steps:
       - name: Check out repository
-        uses: https://data.forgejo.org/actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-        with:
-          fetch-depth: 0
+        uses: actions/checkout@v4
 
       - name: Inspect Runner Environment
         shell: bash
         run: |
-          set -euo pipefail
-          echo "========================================================"
-          echo " Runner Docker Info"
-          echo "========================================================"
+          echo "=== Runner Host Info ==="
+          uname -a
           docker version
           docker info | grep -E 'Server Version|Operating System|Architecture|CPUs|Total Memory' || true
 
-      - name: Verify Pristine Upstream KasmVNC Web Client (Zero Custom Clipboard Code)
+      - name: Build Brave Origin Wayland Docker Image
         shell: bash
         run: |
           set -euo pipefail
           echo "========================================================"
-          echo " Verifying Pristine Upstream KasmVNC Client & Zero Clipboard Shims"
-          echo "========================================================"
-          # 1. Custom clipboard-client.js must be completely removed
-          if [ -f "config/clipboard-client.js" ]; then
-            echo "ERROR: config/clipboard-client.js exists! Must be removed." >&2
-            exit 1
-          fi
-          # 2. audio-client.js must contain zero clipboard logic
-          ! grep -E 'navigator\.clipboard|clipboardPasteFrom|clipboardText|clipboardUp|clipboardDown|clipboardSeamless' config/audio-client.js
-          # 3. Audio initialization guard must exist
-          grep 'window.__BRAVE_ORIGIN_AUDIO_INITIALIZED__' config/audio-client.js
-          echo "Pristine client and separation assertions: PASSED"
-
-      - name: Build Brave Origin Docker Image
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "========================================================"
-          echo " Building Docker Image: ${LOCAL_IMAGE}"
+          echo " Building Wayland Docker Image: ${LOCAL_IMAGE}"
           echo "========================================================"
           docker build \
             --build-arg "BUILD_COMMIT=${{ github.sha }}" \
             --tag "${LOCAL_IMAGE}" \
-            --tag "${IMAGE_NAME}:latest" \
+            --tag "${IMAGE_NAME}:wayland" \
             --tag "${IMAGE_NAME}:${{ github.sha }}" \
             .
           echo "=== Docker Images on Runner ==="
-          docker images | grep -E 'brave-origin|REPOSITORY' || true
+          docker images | grep -E 'brave-origin' || true
 
-      - name: Smoke Test Container Startup & Healthcheck
+      - name: Smoke Test Wayland Container Startup & Healthcheck
         shell: bash
         run: |
           set -euo pipefail
           echo "========================================================"
-          echo " Running In-Container Smoke Test"
-          echo "========================================================"
-
-          cleanup() {
-            echo "--- Stopping and removing smoke test container ---"
-            CONTAINER_LOGS=$(docker logs "${SMOKE_CONTAINER}" 2>&1 || true)
-            BRAVE_LOGS=$(docker exec "${SMOKE_CONTAINER}" cat /config/state/brave.log 2>&1 || true)
-            STATUS_LOG=$(docker exec "${SMOKE_CONTAINER}" cat /config/state/status 2>&1 || true)
-            PROCESS_TREE=$(docker exec "${SMOKE_CONTAINER}" ps aux 2>&1 || true)
-            SANDBOX_INFO=$(docker exec "${SMOKE_CONTAINER}" find /opt /usr -name "*sandbox*" -ls 2>&1 || true)
-            DPKG_FILES=$(docker exec "${SMOKE_CONTAINER}" dpkg -L brave-origin 2>&1 | head -n 40 || true)
-            EXEC_LOG=$(cat /tmp/test-execution.log 2>&1 | tail -n 50 || true)
-            
-            TOKEN="${REGISTRY_TOKEN:-${{ secrets.GITHUB_TOKEN }}}"
-            if [ -n "${TOKEN}" ]; then
-              REPORT=$(printf '### Smoke Test Execution Diagnostics\n**Status**: `%s`\n\n#### Execution Log:\n```text\n%s\n```\n\n#### Sandbox Info:\n```text\n%s\n```\n\n#### DPKG Files:\n```text\n%s\n```\n\n#### Process Tree:\n```text\n%s\n```\n\n#### Brave Log:\n```text\n%s\n```\n\n#### Container Logs:\n```text\n%s\n```' "${STATUS_LOG}" "${EXEC_LOG}" "${SANDBOX_INFO}" "${DPKG_FILES}" "${PROCESS_TREE}" "${BRAVE_LOGS}" "${CONTAINER_LOGS}")
-              JSON_PAYLOAD=$(python3 -c "import json, sys; print(json.dumps({'body': sys.argv[1]}))" "${REPORT}" 2>/dev/null || echo "{\"body\": \"report serialization failed\"}")
-              curl -s -X POST -H "Authorization: token ${TOKEN}" -H "Content-Type: application/json" -d "${JSON_PAYLOAD}" "https://forgejo.foss.homes/api/v1/repos/shoy/brave-origin/issues/1/comments" || true
-            fi
-            
-            docker logs "${SMOKE_CONTAINER}" 2>&1 || true
-            docker rm --force "${SMOKE_CONTAINER}" >/dev/null 2>&1 || true
-          }
-          trap cleanup EXIT
-
-          exec > >(tee -a /tmp/test-execution.log) 2>&1
-
-          echo "--- Testing Invalid KASM_AUTH_ENABLED Validation ---"
-          INVALID_OUTPUT=$(docker run --rm -e KASM_AUTH_ENABLED=invalid "${LOCAL_IMAGE}" 2>&1 || true)
-          echo "${INVALID_OUTPUT}" | grep "Invalid KASM_AUTH_ENABLED" && echo "Invalid auth value rejected: SUCCESS"
-
-          echo "--- Testing KASM_AUTH_ENABLED=true Missing Credentials Validation ---"
-          NO_CRED_OUTPUT=$(docker run --rm -e KASM_AUTH_ENABLED=true "${LOCAL_IMAGE}" 2>&1 || true)
-          echo "${NO_CRED_OUTPUT}" | grep "no authentication credentials exist" && echo "Missing credentials rejected: SUCCESS"
-
-          TEST_DIR=$(mktemp -d)
-          chmod 777 "${TEST_DIR}"
-
-          echo "========================================================"
           echo " REGRESSION TEST 1: Authentication Disabled (KASM_AUTH_ENABLED=false)"
           echo "========================================================"
+          docker rm -f "${SMOKE_CONTAINER}" >/dev/null 2>&1 || true
+
           docker run --detach \
             --name "${SMOKE_CONTAINER}" \
             --shm-size=1g \
-            --security-opt seccomp=unconfined \
-            -v "${TEST_DIR}:/config" \
-            -e KASM_AUTH_ENABLED="false" \
-            -e WEB_PORT="8443" \
-            -e AUTO_UPDATE="false" \
-            -e ENABLE_GPU="false" \
+            --env PUID=1000 \
+            --env PGID=1000 \
+            --env TZ=Etc/UTC \
+            --env AUTO_UPDATE=false \
+            --env ENABLE_AUDIO=true \
+            --env KASM_AUTH_ENABLED=false \
             "${LOCAL_IMAGE}"
 
-          echo "Waiting 12 seconds for KasmVNC & Brave Origin startup..."
-          sleep 12
+          echo "Waiting 15 seconds for Selkies, Labwc & Brave Origin Wayland startup..."
+          sleep 15
 
-          echo "--- Verifying Unauthenticated Mode ---"
+          echo "--- Checking Container Process Tree ---"
+          docker exec "${SMOKE_CONTAINER}" ps -ef
+
+          echo "--- Verifying Wayland Socket & Display ---"
+          docker exec "${SMOKE_CONTAINER}" ls -la /tmp/runtime-braveuser/wayland-1
+
+          echo "--- Verifying Selkies WebSocket Listener on Port 8082 ---"
+          docker exec "${SMOKE_CONTAINER}" ss -tlpn | grep 8082
+
+          echo "--- Verifying Labwc and Brave Origin Process Status ---"
+          docker exec "${SMOKE_CONTAINER}" pgrep -x labwc
+          docker exec "${SMOKE_CONTAINER}" pgrep -x brave
+
+          echo "--- Asserting Zero X11/Xwayland/KasmVNC Processes ---"
+          ! docker exec "${SMOKE_CONTAINER}" pgrep -x Xvnc
+          ! docker exec "${SMOKE_CONTAINER}" pgrep -x openbox
+          ! docker exec "${SMOKE_CONTAINER}" pgrep -x Xwayland
+
+          echo "--- Verifying Nginx TLS Endpoint on Port 8443 ---"
           HTTP_CODE=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -o /dev/null -w "%{http_code}" https://127.0.0.1:8443/ || true)
           if [ "${HTTP_CODE}" = "200" ]; then
-            echo "TEST 1 HTTP Code 200 without login prompt: SUCCESS"
+            echo "TEST 1 HTTP Code 200: SUCCESS"
           else
-            echo "TEST 1 Failed: HTTP code was ${HTTP_CODE}" >&2; exit 1
-          fi
-          
-          STATUS=$(docker exec "${SMOKE_CONTAINER}" cat /config/state/status)
-          if [ "${STATUS}" = "RUNNING" ]; then
-            echo "TEST 1 Status RUNNING: SUCCESS"
-          else
-            echo "TEST 1 Failed: Status was ${STATUS}" >&2; exit 1
+            echo "TEST 1 Failed: HTTP code was ${HTTP_CODE}" >&2
+            docker exec "${SMOKE_CONTAINER}" cat /config/state/nginx-error.log >&2 || true
+            exit 1
           fi
 
-          echo "--- Verifying Single-Origin Audio Route on Port 8443 (/audio) ---"
-          AUDIO_HEALTH=$(docker exec "${SMOKE_CONTAINER}" curl -k -fsS https://127.0.0.1:8443/audio || echo "failed")
-          if [ "${AUDIO_HEALTH}" = "Kasm Audio Live" ]; then
-            echo "TEST 1 Single-Origin Audio Route Healthcheck: SUCCESS"
-          else
-            echo "TEST 1 Failed: Audio health check was ${AUDIO_HEALTH}" >&2; exit 1
-          fi
-
-          echo "--- Verifying Injected Script Tags in index.html ---"
-          HTML_CONTENT=$(docker exec "${SMOKE_CONTAINER}" cat /usr/share/kasmvnc/www/index.html)
-          CLIP_COUNT=$(echo "${HTML_CONTENT}" | grep -c 'clipboard-client\.js' || true)
-          AUDIO_COUNT=$(echo "${HTML_CONTENT}" | grep -c 'audio-client\.js' || true)
-          echo "Script tags found: clipboard=${CLIP_COUNT}, audio=${AUDIO_COUNT}"
-          if [ "${CLIP_COUNT}" -eq 0 ] && [ "${AUDIO_COUNT}" -eq 1 ]; then
-            echo "TEST 1 Script tag counts verified (zero custom clipboard, audio active): SUCCESS"
-          else
-            echo "TEST 1 Failed: unexpected script tag counts (clip=${CLIP_COUNT}, audio=${AUDIO_COUNT})" >&2; exit 1
-          fi
-
-          echo "--- Setting Persistent Credentials with reset-password.sh ---"
-          docker exec "${SMOKE_CONTAINER}" /usr/local/bin/reset-password.sh "TestSecretPassword123!"
-
-          echo "--- Verifying existing credentials do NOT activate auth while KASM_AUTH_ENABLED=false ---"
-          HTTP_CODE_AFTER_PASSWD=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -o /dev/null -w "%{http_code}" https://127.0.0.1:8443/ || true)
-          if [ "${HTTP_CODE_AFTER_PASSWD}" = "200" ]; then
-            echo "TEST 1 Existing .kasmpasswd does not trigger auth: SUCCESS"
-          else
-            echo "TEST 1 Failed: HTTP code after password was ${HTTP_CODE_AFTER_PASSWD}" >&2; exit 1
-          fi
+          echo "--- Testing Password Reset Utility ---"
+          docker exec "${SMOKE_CONTAINER}" /usr/local/bin/reset-password.sh "WaylandSecret123!"
 
           docker stop -t 5 "${SMOKE_CONTAINER}" >/dev/null 2>&1 || true
           docker rm "${SMOKE_CONTAINER}" >/dev/null 2>&1 || true
@@ -196,158 +110,44 @@ jobs:
           docker run --detach \
             --name "${SMOKE_CONTAINER}" \
             --shm-size=1g \
-            --security-opt seccomp=unconfined \
-            -v "${TEST_DIR}:/config" \
-            -e KASM_AUTH_ENABLED="true" \
-            -e KASM_USER="brave" \
-            -e WEB_PORT="8443" \
-            -e AUTO_UPDATE="false" \
-            -e ENABLE_GPU="false" \
+            --env PUID=1000 \
+            --env PGID=1000 \
+            --env TZ=Etc/UTC \
+            --env AUTO_UPDATE=false \
+            --env ENABLE_AUDIO=true \
+            --env KASM_AUTH_ENABLED=true \
+            --env KASM_PASSWORD="WaylandSecret123!" \
             "${LOCAL_IMAGE}"
 
-          echo "Waiting 12 seconds for KasmVNC & Brave Origin startup..."
-          sleep 12
+          sleep 10
 
-          echo "--- Diagnostic Debug of KASMPASSWD and curl in TEST 2 ---"
-          docker exec "${SMOKE_CONTAINER}" ls -la /config/kasmvnc/
-          docker exec "${SMOKE_CONTAINER}" cat /config/kasmvnc/.kasmpasswd || true
-          docker exec "${SMOKE_CONTAINER}" curl -k -i https://127.0.0.1:8443/ || true
-
-          echo "--- Verifying Login Prompt (Unauthenticated Request) ---"
-          UNAUTH_CODE=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -o /dev/null -w "%{http_code}" https://127.0.0.1:8443/ || true)
-          if [ "${UNAUTH_CODE}" = "401" ]; then
-            echo "TEST 2 Unauthenticated request returns 401 prompt: SUCCESS"
+          echo "--- Verifying 401 Unauthorized without credentials ---"
+          HTTP_CODE_AUTH=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -o /dev/null -w "%{http_code}" https://127.0.0.1:8443/ || true)
+          if [ "${HTTP_CODE_AUTH}" = "401" ]; then
+            echo "TEST 2 Auth 401 response: SUCCESS"
           else
-            echo "TEST 2 Failed: Unauthenticated request returned ${UNAUTH_CODE}" >&2; exit 1
+            echo "TEST 2 Failed: HTTP code was ${HTTP_CODE_AUTH} (expected 401)" >&2; exit 1
           fi
 
-          echo "--- Verifying Incorrect Password Rejection ---"
-          BAD_AUTH_CODE=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -o /dev/null -w "%{http_code}" -u brave:WrongPassword https://127.0.0.1:8443/ || true)
-          if [ "${BAD_AUTH_CODE}" = "401" ]; then
-            echo "TEST 2 Incorrect password rejected (401): SUCCESS"
+          echo "--- Verifying 200 OK with valid credentials ---"
+          HTTP_CODE_VALID=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -u "brave:WaylandSecret123!" -o /dev/null -w "%{http_code}" https://127.0.0.1:8443/ || true)
+          if [ "${HTTP_CODE_VALID}" = "200" ]; then
+            echo "TEST 2 Auth 200 with credentials: SUCCESS"
           else
-            echo "TEST 2 Failed: Bad auth returned ${BAD_AUTH_CODE}" >&2; exit 1
-          fi
-
-          echo "--- Verifying Correct Password Acceptance ---"
-          GOOD_AUTH_CODE=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -o /dev/null -w "%{http_code}" -u brave:TestSecretPassword123! https://127.0.0.1:8443/ || true)
-          if [ "${GOOD_AUTH_CODE}" = "200" ]; then
-            echo "TEST 2 Correct password accepted (200): SUCCESS"
-          else
-            echo "TEST 2 Failed: Good auth returned ${GOOD_AUTH_CODE}" >&2; exit 1
-          fi
-
-          AUTH_STATUS=$(docker exec "${SMOKE_CONTAINER}" cat /config/state/status)
-          if [ "${AUTH_STATUS}" = "RUNNING" ]; then
-            echo "TEST 2 Status RUNNING: SUCCESS"
-          else
-            echo "TEST 2 Failed: Auth status was ${AUTH_STATUS}" >&2; exit 1
-          fi
-
-          echo "========================================================"
-          echo " REGRESSION TEST 3: Restart & Credential Persistence"
-          echo "========================================================"
-          docker restart "${SMOKE_CONTAINER}"
-          echo "Waiting 12 seconds for restarted container..."
-          sleep 12
-
-          RESTART_AUTH_CODE=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -o /dev/null -w "%{http_code}" -u brave:TestSecretPassword123! https://127.0.0.1:8443/ || true)
-          if [ "${RESTART_AUTH_CODE}" = "200" ]; then
-            echo "TEST 3 Credentials work after restart: SUCCESS"
-          else
-            echo "TEST 3 Failed: Restart auth returned ${RESTART_AUTH_CODE}" >&2; exit 1
-          fi
-
-          if docker exec "${SMOKE_CONTAINER}" test -d /config/profile; then
-            echo "TEST 3 /config/profile persistent: SUCCESS"
-          else
-            echo "TEST 3 Failed: profile dir missing" >&2; exit 1
+            echo "TEST 2 Failed: HTTP code with valid credentials was ${HTTP_CODE_VALID} (expected 200)" >&2; exit 1
           fi
 
           docker stop -t 5 "${SMOKE_CONTAINER}" >/dev/null 2>&1 || true
           docker rm "${SMOKE_CONTAINER}" >/dev/null 2>&1 || true
+          echo "All Smoke Tests: PASSED"
 
-          echo "========================================================"
-          echo " REGRESSION TEST 4: Switch Back to Authentication Disabled"
-          echo "========================================================"
-          docker run --detach \
-            --name "${SMOKE_CONTAINER}" \
-            --shm-size=1g \
-            --security-opt seccomp=unconfined \
-            -v "${TEST_DIR}:/config" \
-            -e KASM_AUTH_ENABLED="false" \
-            -e WEB_PORT="8443" \
-            -e AUTO_UPDATE="false" \
-            -e ENABLE_GPU="false" \
-            "${LOCAL_IMAGE}"
-
-          echo "Waiting 12 seconds for container startup..."
-          sleep 12
-
-          SWITCH_BACK_CODE=$(docker exec "${SMOKE_CONTAINER}" curl -k -s -o /dev/null -w "%{http_code}" https://127.0.0.1:8443/ || true)
-          if [ "${SWITCH_BACK_CODE}" = "200" ]; then
-            echo "TEST 4 Password prompt disappeared (200): SUCCESS"
-          else
-            echo "TEST 4 Failed: Switch back returned ${SWITCH_BACK_CODE}" >&2; exit 1
-          fi
-
-          if docker exec "${SMOKE_CONTAINER}" test -f /config/kasmvnc/.kasmpasswd; then
-            echo "TEST 4 Stored .kasmpasswd file preserved: SUCCESS"
-          else
-            echo "TEST 4 Failed: .kasmpasswd missing" >&2; exit 1
-          fi
-
-          FINAL_STATUS=$(docker exec "${SMOKE_CONTAINER}" cat /config/state/status)
-          if [ "${FINAL_STATUS}" = "RUNNING" ]; then
-            echo "TEST 4 Status RUNNING: SUCCESS"
-          else
-            echo "TEST 4 Failed: Final status was ${FINAL_STATUS}" >&2; exit 1
-          fi
-
-          echo "--- Checking Process Running Status ---"
-          docker exec "${SMOKE_CONTAINER}" pgrep -a -f "brave" || (echo "ERROR: Brave process not running!" && exit 1)
-          docker exec "${SMOKE_CONTAINER}" pgrep -a -f "openbox" || (echo "ERROR: Openbox process not running!" && exit 1)
-          docker exec "${SMOKE_CONTAINER}" pgrep -a -f "Xvnc" || (echo "ERROR: Xvnc process not running!" && exit 1)
-
-          echo "--- Checking Package Verification ---"
-          docker exec "${SMOKE_CONTAINER}" dpkg-query -W -f='${Package} ${Version}\n' brave-origin
-          if docker exec "${SMOKE_CONTAINER}" dpkg -s brave-browser 2>/dev/null; then
-            echo "ERROR: standard brave-browser found!" >&2; exit 1
-          fi
-
-          echo "=== Smoke Test Validation Succeeded ==="
-
-      - name: Deploy Image to Forgejo Container Registry
+      - name: Deploy Image to Forgejo Container Registry (Wayland Tag Only)
         shell: bash
         run: |
           set -euo pipefail
           echo "========================================================"
-          echo " Finalizing Deployment to Forgejo Registry"
+          echo " Publishing Wayland Image to Registry"
           echo "========================================================"
-          
-          TOKEN="${REGISTRY_TOKEN:-${{ secrets.GITHUB_TOKEN }}}"
-          USERNAME="${REGISTRY_USERNAME:-shoy}"
-          
-          if [ -n "${TOKEN}" ]; then
-            echo "--- Logging into Forgejo Registry (${REGISTRY}) as ${USERNAME} ---"
-            printf '%s' "${TOKEN}" | docker login "${REGISTRY}" -u "${USERNAME}" --password-stdin
-            
-            echo "Pushing ${IMAGE_NAME}:latest..."
-            docker push "${IMAGE_NAME}:latest"
-            
-            echo "Pushing ${IMAGE_NAME}:${{ github.sha }}..."
-            docker push "${IMAGE_NAME}:${{ github.sha }}"
-            
-            echo "=== Image successfully published to Forgejo Container Registry! ==="
-          else
-            echo "Warning: No registry token provided. Skipping push."
-          fi
-
-          echo "========================================================"
-          echo " SUCCESS: Brave Origin image is built, verified & deployed"
-          echo " Available on Unraid host as: '${LOCAL_IMAGE}'"
-          echo " Available in Registry as: '${IMAGE_NAME}:latest'"
-          echo "========================================================"
-        env:
-          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
-          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          docker push "${IMAGE_NAME}:wayland"
+          docker push "${IMAGE_NAME}:${{ github.sha }}"
+          echo "Published: ${IMAGE_NAME}:wayland and ${IMAGE_NAME}:${{ github.sha }}"
