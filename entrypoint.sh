@@ -243,7 +243,7 @@ if [ "${ENABLE_AUDIO:-true}" = "true" ]; then
     if [ -f "/etc/kasmvnc/audio-client.js" ]; then
         cp -f /etc/kasmvnc/audio-client.js /usr/share/kasmvnc/www/audio-client.js 2>/dev/null || true
         # Inject ephemeral token directly into served JavaScript file
-        sed -i "s|const token = window.KASM_AUDIO_TOKEN || '';|const token = '${AUDIO_SESSION_TOKEN}';|g" /usr/share/kasmvnc/www/audio-client.js 2>/dev/null || true
+        sed -i "s|__AUDIO_SESSION_TOKEN__|${AUDIO_SESSION_TOKEN}|g" /usr/share/kasmvnc/www/audio-client.js 2>/dev/null || true
         chmod 644 /usr/share/kasmvnc/www/audio-client.js 2>/dev/null || true
         if ! grep -q 'audio-client.js' /usr/share/kasmvnc/www/index.html 2>/dev/null; then
             sed -i 's|</body>|<script src="audio-client.js"></script></body>|' /usr/share/kasmvnc/www/index.html 2>/dev/null || true

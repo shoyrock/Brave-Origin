@@ -6,6 +6,8 @@
 (function() {
     'use strict';
 
+    window.KASM_AUDIO_TOKEN = window.KASM_AUDIO_TOKEN || '__AUDIO_SESSION_TOKEN__';
+
     const SAMPLE_RATE = 44100;
     const CHANNELS = 2;
     const JITTER_BUFFER_SEC = 0.05; // 50ms initial jitter buffer
