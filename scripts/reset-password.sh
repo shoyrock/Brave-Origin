@@ -25,7 +25,7 @@ rm -f "${KASMPASSWD_FILE}" 2>/dev/null || true
 
 # Configure credentials via htpasswd
 htpasswd -bc "${KASMPASSWD_FILE}" "${KASM_USER}" "${PASSWORD}" >/dev/null 2>&1
-chmod 600 "${KASMPASSWD_FILE}" 2>/dev/null || true
+chmod 644 "${KASMPASSWD_FILE}" 2>/dev/null || true
 chown "${PUID}:${PGID}" "${KASMPASSWD_FILE}" 2>/dev/null || true
 
 # Reload Nginx if running

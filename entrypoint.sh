@@ -97,18 +97,18 @@ if [ "${KASM_AUTH_ENABLED_LOWER}" = "true" ]; then
         if [ -n "${KASM_USER}" ] && [ -n "${KASM_PASSWORD}" ]; then
             echo "[nginx] Creating initial credentials from environment variables..."
             htpasswd -bc "${KASMPASSWD_FILE}" "${KASM_USER}" "${KASM_PASSWORD}" >/dev/null 2>&1
-            chmod 600 "${KASMPASSWD_FILE}"
+            chmod 644 "${KASMPASSWD_FILE}"
         elif [ -n "${KASM_PASSWORD}" ]; then
             echo "[nginx] Creating initial credentials with default user 'brave'..."
             htpasswd -bc "${KASMPASSWD_FILE}" "brave" "${KASM_PASSWORD}" >/dev/null 2>&1
-            chmod 600 "${KASMPASSWD_FILE}"
+            chmod 644 "${KASMPASSWD_FILE}"
         else
             echo "[nginx] ERROR: KASM_AUTH_ENABLED=true but no authentication credentials exist!" >&2
             echo "[nginx] Set KASM_PASSWORD or run reset-password.sh." >&2
             exit 1
         fi
     fi
-    echo "auth_basic "Brave Origin Authentication Required";" > /etc/nginx/conf.d/auth.conf
+    echo 'auth_basic "Brave Origin Authentication Required";' > /etc/nginx/conf.d/auth.conf
     echo "auth_basic_user_file /config/.kasmpasswd;" >> /etc/nginx/conf.d/auth.conf
     echo "[nginx] [$(date -u +"%Y-%m-%d %H:%M:%S UTC")] Authentication mode: ENABLED"
 else
