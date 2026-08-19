@@ -1,7 +1,9 @@
 /**
- * Standalone KasmVNC Single-Origin Web Audio Client
- * Connects to the Secure Same-Origin Audio Endpoint (/audio)
- * Decodes and renders raw stereo PCM (16-bit, 44.1kHz) with low-latency Web Audio API.
+ * Standalone KasmVNC Single-Origin Web Audio & Seamless Clipboard Client
+ * - Connects to the Secure Same-Origin Audio Endpoint (/audio)
+ * - Decodes and renders raw stereo PCM (16-bit, 44.1kHz) with low-latency Web Audio API
+ * - Enforces zero audio buffer drift and instant playback resumption on first interaction
+ * - Provides native seamless bidirectional clipboard synchronization (Chromium / Firefox fallback)
  */
 (function() {
     'use strict';
@@ -10,7 +12,8 @@
 
     const SAMPLE_RATE = 44100;
     const CHANNELS = 2;
-    const JITTER_BUFFER_SEC = 0.05; // 50ms initial jitter buffer
+    const JITTER_BUFFER_SEC = 0.03; // 30ms jitter buffer for ultra-low latency
+    const MAX_BUFFER_AHEAD = 0.10;  // 100ms max buffer ahead before resetting drift
 
     let audioCtx = null;
     let gainNode = null;
@@ -20,6 +23,9 @@
     let volume = 1.0;
     let reconnectTimer = null;
     let isConnected = false;
+    let lastPcmTime = 0;
+
+    // --- Audio Subsystem ---
 
     function initAudioContext() {
         if (!audioCtx) {
@@ -30,11 +36,14 @@
             }
             audioCtx = new AudioContextClass({ sampleRate: SAMPLE_RATE });
             gainNode = audioCtx.createGain();
-            gainNode.gain.value = volume;
+            gainNode.gain.value = isMuted ? 0 : volume;
             gainNode.connect(audioCtx.destination);
+            nextPlayTime = audioCtx.currentTime + JITTER_BUFFER_SEC;
         }
+
         if (audioCtx.state === 'suspended') {
             audioCtx.resume().then(() => {
+                nextPlayTime = audioCtx.currentTime + JITTER_BUFFER_SEC;
                 updateUI();
             }).catch(() => {});
         }
@@ -53,9 +62,9 @@
             z-index: 999999;
             display: flex;
             align-items: center;
-            background: rgba(20, 24, 33, 0.85);
+            background: rgba(20, 24, 33, 0.88);
             backdrop-filter: blur(8px);
-            border: 1px solid rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.18);
             border-radius: 24px;
             padding: 6px 14px;
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
@@ -78,7 +87,7 @@
                 outline: none;
             " title="Toggle Mute / Unmute">
                 <svg id="kasm-audio-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 5"></polygon>
                     <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
                 </svg>
             </button>
@@ -117,14 +126,16 @@
             updateUI();
         });
 
-        // Resume on any user interaction with the page or desktop canvas
-        const resumeHandler = () => {
+        // Global interaction listeners in capturing phase to unlock AudioContext and Clipboard API instantly
+        const userInteractionHandler = () => {
             initAudioContext();
-            window.removeEventListener('pointerdown', resumeHandler);
-            window.removeEventListener('keydown', resumeHandler);
+            initSeamlessClipboard();
         };
-        window.addEventListener('pointerdown', resumeHandler);
-        window.addEventListener('keydown', resumeHandler);
+
+        window.addEventListener('pointerdown', userInteractionHandler, { capture: true, passive: true });
+        window.addEventListener('mousedown', userInteractionHandler, { capture: true, passive: true });
+        window.addEventListener('touchstart', userInteractionHandler, { capture: true, passive: true });
+        window.addEventListener('keydown', userInteractionHandler, { capture: true, passive: true });
 
         updateUI();
     }
@@ -151,7 +162,7 @@
         }
 
         if (audioCtx && audioCtx.state === 'suspended') {
-            status.textContent = 'Click to enable';
+            status.textContent = 'Click to enable audio';
             status.style.color = '#ffaa00';
         } else if (!isConnected) {
             status.textContent = 'Connecting...';
@@ -182,12 +193,14 @@
         source.connect(gainNode);
 
         const currentTime = audioCtx.currentTime;
-        if (nextPlayTime < currentTime) {
+        // Anti-drift: reset buffer position if too far ahead (e.g. background tab) or behind
+        if (nextPlayTime < currentTime || nextPlayTime > currentTime + MAX_BUFFER_AHEAD) {
             nextPlayTime = currentTime + JITTER_BUFFER_SEC;
         }
 
         source.start(nextPlayTime);
         nextPlayTime += audioBuffer.duration;
+        lastPcmTime = Date.now();
     }
 
     function connectWebSocket() {
@@ -197,19 +210,16 @@
         }
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host; // Contains hostname:port (e.g. 192.168.10.10:8443 or my-host:8443)
+        const host = window.location.host;
         const token = window.KASM_AUDIO_TOKEN || '';
         const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
         const url = `${protocol}//${host}/audio${tokenParam}`;
-
-        console.log(`[KasmAudio] Connecting to Audio Relay at ${url}...`);
 
         try {
             ws = new WebSocket(url);
             ws.binaryType = 'arraybuffer';
 
             ws.onopen = function() {
-                console.log('[KasmAudio] Audio WebSocket connected successfully.');
                 isConnected = true;
                 updateUI();
             };
@@ -220,34 +230,107 @@
                 }
             };
 
-            ws.onclose = function(e) {
-                console.log('[KasmAudio] Audio WebSocket closed. Reconnecting in 3s...', e.reason);
+            ws.onclose = function() {
                 isConnected = false;
                 updateUI();
                 clearTimeout(reconnectTimer);
-                reconnectTimer = setTimeout(connectWebSocket, 3000);
+                reconnectTimer = setTimeout(connectWebSocket, 1500);
             };
 
-            ws.onerror = function(err) {
-                console.warn('[KasmAudio] Audio WebSocket error:', err);
+            ws.onerror = function() {
                 isConnected = false;
                 updateUI();
             };
         } catch (e) {
-            console.error('[KasmAudio] Failed to initialize WebSocket:', e);
             clearTimeout(reconnectTimer);
-            reconnectTimer = setTimeout(connectWebSocket, 3000);
+            reconnectTimer = setTimeout(connectWebSocket, 1500);
         }
     }
 
-    // Initialize when DOM is ready
+    // --- Seamless Bidirectional Clipboard Subsystem ---
+
+    let clipboardInitialized = false;
+
+    function initSeamlessClipboard() {
+        if (clipboardInitialized) return;
+
+        try {
+            // Configure default client-side localStorage settings
+            window.localStorage.setItem('clipboard_seamless', 'true');
+            window.localStorage.setItem('clipboard_up', 'true');
+            window.localStorage.setItem('clipboard_down', 'true');
+
+            // Prompt permission query if available
+            if (navigator.permissions && navigator.permissions.query) {
+                navigator.permissions.query({ name: 'clipboard-read' }).catch(() => {});
+            }
+
+            const attachRfbClipboard = () => {
+                const rfb = window.UI && window.UI.rfb;
+                if (rfb) {
+                    rfb.clipboardUp = true;
+                    rfb.clipboardDown = true;
+                    rfb.clipboardSeamless = true;
+                    rfb.clipboardBinary = typeof navigator.clipboard?.read === 'function';
+
+                    // Server -> Client: When remote X11 updates clipboard, write to local OS clipboard
+                    rfb.addEventListener('clipboard', async (e) => {
+                        if (e.detail && e.detail.text && navigator.clipboard && navigator.clipboard.writeText) {
+                            try {
+                                await navigator.clipboard.writeText(e.detail.text);
+                            } catch (err) {
+                                console.warn('[KasmClipboard] Remote clipboard write warning:', err);
+                            }
+                        }
+                    });
+                    clipboardInitialized = true;
+                    return true;
+                }
+                return false;
+            };
+
+            if (!attachRfbClipboard()) {
+                const checkTimer = setInterval(() => {
+                    if (attachRfbClipboard()) {
+                        clearInterval(checkTimer);
+                    }
+                }, 300);
+            }
+
+            // Client -> Server: Intercept Ctrl+V / Cmd+V in capturing phase to push local clipboard immediately
+            window.addEventListener('keydown', async (e) => {
+                if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyV' || e.key === 'v' || e.key === 'V')) {
+                    if (navigator.clipboard && navigator.clipboard.readText) {
+                        try {
+                            const text = await navigator.clipboard.readText();
+                            if (text && text.length > 0) {
+                                const rfb = window.UI && window.UI.rfb;
+                                if (rfb && typeof rfb.clipboardPasteFrom === 'function') {
+                                    rfb.clipboardPasteFrom(text);
+                                }
+                            }
+                        } catch (err) {
+                            // Permission or focus restriction in non-Chromium browser
+                        }
+                    }
+                }
+            }, { capture: true, passive: true });
+
+        } catch (e) {
+            console.warn('[KasmClipboard] Init warning:', e);
+        }
+    }
+
+    // Initialize UI, audio, and clipboard when DOM is ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
             createUI();
             connectWebSocket();
+            initSeamlessClipboard();
         });
     } else {
         createUI();
         connectWebSocket();
+        initSeamlessClipboard();
     }
 })();

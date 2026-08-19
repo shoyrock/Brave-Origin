@@ -129,6 +129,17 @@ if [ "${ENABLE_AUDIO:-true}" = "true" ]; then
     else
         echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Starting internal PulseAudio daemon..."
         pulseaudio --start --exit-idle-time=-1 --daemonize=true >/dev/null 2>&1 || true
+        # Actively wait for PulseAudio readiness (bounded loop: max 3s)
+        for i in $(seq 1 30); do
+            if pactl info >/dev/null 2>&1; then
+                echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] PulseAudio is active and responding."
+                break
+            fi
+            sleep 0.1
+        done
+        # Ensure default virtual null sink exists for Brave capture
+        pactl load-module module-null-sink sink_name=auto_null sink_properties=device.description=Auto_Null >/dev/null 2>&1 || true
+        pactl set-default-sink auto_null >/dev/null 2>&1 || true
     fi
     start_audio_relay
 fi
