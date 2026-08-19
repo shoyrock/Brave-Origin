@@ -18,7 +18,7 @@ env:
 jobs:
   build-and-smoke-test:
     name: Build & Smoke Test Wayland Container
-    runs-on: native
+    runs-on: docker-build
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -148,6 +148,18 @@ jobs:
           echo "========================================================"
           echo " Publishing Wayland Image to Registry"
           echo "========================================================"
-          docker push "${IMAGE_NAME}:wayland"
-          docker push "${IMAGE_NAME}:${{ github.sha }}"
-          echo "Published: ${IMAGE_NAME}:wayland and ${IMAGE_NAME}:${{ github.sha }}"
+          TOKEN="${REGISTRY_TOKEN:-${{ secrets.GITHUB_TOKEN }}}"
+          USERNAME="${REGISTRY_USERNAME:-shoy}"
+          REGISTRY="forgejo.foss.homes"
+          if [ -n "${TOKEN}" ]; then
+            printf '%s' "${TOKEN}" | docker login "${REGISTRY}" -u "${USERNAME}" --password-stdin
+            docker push "${IMAGE_NAME}:wayland"
+            docker push "${IMAGE_NAME}:${{ github.sha }}"
+            echo "Published: ${IMAGE_NAME}:wayland and ${IMAGE_NAME}:${{ github.sha }}"
+          else
+            docker push "${IMAGE_NAME}:wayland"
+            docker push "${IMAGE_NAME}:${{ github.sha }}"
+          fi
+        env:
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
