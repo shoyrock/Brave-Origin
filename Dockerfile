@@ -1,6 +1,14 @@
 # syntax=docker/dockerfile:1
 FROM ghcr.io/linuxserver/baseimage-selkies:debiantrixie AS selkies-upstream
 
+# Pinned Selkies Source at exact commit 92dea42fc70bfcb52e6d98c4e6854872badfe621
+FROM debian:trixie-slim AS selkies-src
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && \
+    git clone https://github.com/selkies-project/selkies.git /selkies-src && \
+    cd /selkies-src && \
+    git checkout 92dea42fc70bfcb52e6d98c4e6854872badfe621 && \
+    rm -rf .git
+
 FROM debian:trixie-slim
 
 LABEL maintainer="shoy" \
@@ -101,6 +109,9 @@ COPY --from=selkies-upstream /lsiopy/lib/python3.13/site-packages/ /usr/local/li
 COPY --from=selkies-upstream /usr/bin/selkies-desktop /usr/local/bin/selkies-desktop
 COPY --from=selkies-upstream /usr/bin/wtype /usr/local/bin/wtype
 COPY --from=selkies-upstream /usr/share/selkies/selkies-dashboard/ /usr/share/selkies/web/
+# Install pinned Selkies 92dea42fc70bfcb52e6d98c4e6854872badfe621
+COPY --from=selkies-src /selkies-src /tmp/selkies-src
+RUN pip install --no-deps /tmp/selkies-src --break-system-packages && rm -rf /tmp/selkies-src
 
 # 3. Add Official Brave Origin Apt Repository (Release Channel)
 RUN install -m 0755 -d /etc/apt/keyrings && \
