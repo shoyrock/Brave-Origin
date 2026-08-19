@@ -167,8 +167,8 @@ jobs:
 
           echo "--- Verifying Injected Script Tags in index.html ---"
           HTML_CONTENT=$(docker exec "${SMOKE_CONTAINER}" cat /usr/share/kasmvnc/www/index.html)
-          CLIP_COUNT=$(echo "${HTML_CONTENT}" | grep -o 'clipboard-client\.js' | wc -l)
-          AUDIO_COUNT=$(echo "${HTML_CONTENT}" | grep -o 'audio-client\.js' | wc -l)
+          CLIP_COUNT=$(echo "${HTML_CONTENT}" | grep -c 'clipboard-client\.js' || true)
+          AUDIO_COUNT=$(echo "${HTML_CONTENT}" | grep -c 'audio-client\.js' || true)
           echo "Script tags found: clipboard=${CLIP_COUNT}, audio=${AUDIO_COUNT}"
           if [ "${CLIP_COUNT}" -eq 0 ] && [ "${AUDIO_COUNT}" -eq 1 ]; then
             echo "TEST 1 Script tag counts verified (zero custom clipboard, audio active): SUCCESS"
