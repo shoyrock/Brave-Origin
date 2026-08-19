@@ -59,6 +59,7 @@ jobs:
           docker run --detach \
             --name "${SMOKE_CONTAINER}" \
             --shm-size=1g \
+            --security-opt seccomp=unconfined \
             --env PUID=1000 \
             --env PGID=1000 \
             --env TZ=Etc/UTC \
@@ -110,6 +111,7 @@ jobs:
           docker run --detach \
             --name "${SMOKE_CONTAINER}" \
             --shm-size=1g \
+            --security-opt seccomp=unconfined \
             --env PUID=1000 \
             --env PGID=1000 \
             --env TZ=Etc/UTC \
