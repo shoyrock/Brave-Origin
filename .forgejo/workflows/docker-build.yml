@@ -56,6 +56,7 @@ jobs:
           echo " Building Docker Image: ${LOCAL_IMAGE}"
           echo "========================================================"
           docker build \
+            --build-arg "BUILD_COMMIT=${{ github.sha }}" \
             --tag "${LOCAL_IMAGE}" \
             --tag "${IMAGE_NAME}:latest" \
             --tag "${IMAGE_NAME}:${{ github.sha }}" \

@@ -183,6 +183,9 @@ COPY scripts/audio-server.py /usr/local/bin/audio-server.py
 COPY config/audio-client.js /etc/kasmvnc/audio-client.js
 COPY config/clipboard-client.js /etc/kasmvnc/clipboard-client.js
 
+ARG BUILD_COMMIT=dev
+RUN echo "${BUILD_COMMIT}" > /etc/brave-origin-build
+
 RUN chmod +x /usr/local/bin/entrypoint.sh \
              /usr/local/bin/start-session.sh \
              /usr/local/bin/update-brave.sh \

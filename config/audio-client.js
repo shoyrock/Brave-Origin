@@ -1,15 +1,16 @@
 /**
- * Standalone KasmVNC Single-Origin Web Audio Client
+ * Standalone KasmVNC Single-Origin Web Audio Client with Live Diagnostics
  * - Connects to the Secure Same-Origin Audio Endpoint (/audio)
  * - Decodes and renders raw stereo PCM (16-bit, 44.1kHz) with low-latency Web Audio API
  * - Enforces zero audio backlog while suspended and instant playback on first interaction
- * - Provides responsive volume/mute widget with clear status states
+ * - Exposes window.KASM_AUDIO_LOG for real-client browser timing analysis
  * - 100% independent from clipboard subsystem
  */
 (function() {
     'use strict';
 
     window.KASM_AUDIO_TOKEN = window.KASM_AUDIO_TOKEN || '__AUDIO_SESSION_TOKEN__';
+    window.KASM_AUDIO_LOG = window.KASM_AUDIO_LOG || [];
 
     const SAMPLE_RATE = 44100;
     const CHANNELS = 2;
@@ -27,12 +28,29 @@
     let isPlaying = false;
     let lastPcmTime = 0;
     let pcmWatchdogTimer = null;
+    let hasReceivedFirstPcm = false;
+    let hasScheduledFirstBuffer = false;
+
+    function logAudioEvent(name, data = {}) {
+        const entry = {
+            time: new Date().toISOString().substring(11, 23),
+            event: name,
+            audioCtx_state: audioCtx ? audioCtx.state : 'null',
+            ...data
+        };
+        window.KASM_AUDIO_LOG.push(entry);
+        if (window.KASM_AUDIO_LOG.length > 200) {
+            window.KASM_AUDIO_LOG.shift();
+        }
+        console.log(`[KasmAudio] [${entry.time}] ${name}:`, data);
+    }
 
     function initAudioContext() {
         if (!audioCtx) {
             const AudioContextClass = window.AudioContext || window.webkitAudioContext;
             if (!AudioContextClass) {
                 console.warn('[KasmAudio] Web Audio API is not supported in this browser.');
+                logAudioEvent('audio_unsupported');
                 return false;
             }
             audioCtx = new AudioContextClass({ sampleRate: SAMPLE_RATE });
@@ -40,13 +58,20 @@
             gainNode.gain.value = isMuted ? 0 : volume;
             gainNode.connect(audioCtx.destination);
             nextPlayTime = audioCtx.currentTime + JITTER_BUFFER_SEC;
+            logAudioEvent('audioCtx_created', { state: audioCtx.state, sampleRate: audioCtx.sampleRate });
         }
 
         if (audioCtx.state === 'suspended') {
+            const t0 = performance.now();
+            logAudioEvent('audioCtx_resume_call');
             audioCtx.resume().then(() => {
+                const dur = Math.round(performance.now() - t0);
                 nextPlayTime = audioCtx.currentTime + JITTER_BUFFER_SEC;
+                logAudioEvent('audioCtx_running', { resume_duration_ms: dur });
                 updateUI();
-            }).catch(() => {});
+            }).catch(err => {
+                logAudioEvent('audioCtx_resume_error', { error: err.message });
+            });
         }
         return true;
     }
@@ -113,6 +138,7 @@
             if (gainNode) {
                 gainNode.gain.value = isMuted ? 0 : volume;
             }
+            logAudioEvent('audio_toggle_mute', { isMuted });
             updateUI();
         });
 
@@ -128,7 +154,8 @@
         });
 
         // Global interaction listeners in capturing phase to unlock AudioContext on first gesture
-        const userInteractionHandler = () => {
+        const userInteractionHandler = (e) => {
+            logAudioEvent('user_interaction', { type: e.type });
             initAudioContext();
         };
 
@@ -177,12 +204,21 @@
     function playPCMChunk(arrayBuffer) {
         // Drop incoming audio while suspended to avoid stale backlog
         if (!audioCtx || audioCtx.state !== 'running' || isMuted) {
+            if (!hasReceivedFirstPcm) {
+                logAudioEvent('first_pcm_frame_dropped_suspended', { bytes: arrayBuffer.byteLength });
+                hasReceivedFirstPcm = true;
+            }
             return;
         }
 
         const int16Data = new Int16Array(arrayBuffer);
         const frameCount = int16Data.length / CHANNELS;
         if (frameCount <= 0) return;
+
+        if (!hasReceivedFirstPcm) {
+            logAudioEvent('first_pcm_frame_received', { bytes: arrayBuffer.byteLength });
+            hasReceivedFirstPcm = true;
+        }
 
         const audioBuffer = audioCtx.createBuffer(CHANNELS, frameCount, SAMPLE_RATE);
         const leftChannel = audioBuffer.getChannelData(0);
@@ -200,12 +236,23 @@
         const currentTime = audioCtx.currentTime;
         // Anti-drift: Clamp nextPlayTime if behind or too far ahead
         if (nextPlayTime < currentTime || nextPlayTime > currentTime + MAX_BUFFER_AHEAD) {
+            const driftLead = Math.round((nextPlayTime - currentTime) * 1000);
+            logAudioEvent('schedule_reset_antidrift', { drift_lead_ms: driftLead });
             nextPlayTime = currentTime + JITTER_BUFFER_SEC;
         }
 
         source.start(nextPlayTime);
         nextPlayTime += audioBuffer.duration;
         lastPcmTime = Date.now();
+
+        if (!hasScheduledFirstBuffer) {
+            logAudioEvent('first_pcm_buffer_scheduled', {
+                currentTime: Math.round(currentTime * 1000) / 1000,
+                scheduledTime: Math.round(nextPlayTime * 1000) / 1000
+            });
+            hasScheduledFirstBuffer = true;
+        }
+
         if (!isPlaying) {
             isPlaying = true;
             updateUI();
@@ -234,11 +281,14 @@
         const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
         const url = `${protocol}//${host}/audio${tokenParam}`;
 
+        logAudioEvent('ws_connect_start', { url });
+
         try {
             ws = new WebSocket(url);
             ws.binaryType = 'arraybuffer';
 
             ws.onopen = function() {
+                logAudioEvent('ws_open');
                 isConnected = true;
                 updateUI();
             };
@@ -249,7 +299,8 @@
                 }
             };
 
-            ws.onclose = function() {
+            ws.onclose = function(e) {
+                logAudioEvent('ws_close', { code: e.code, reason: e.reason });
                 isConnected = false;
                 isPlaying = false;
                 updateUI();
@@ -257,27 +308,29 @@
                 reconnectTimer = setTimeout(connectWebSocket, 1500);
             };
 
-            ws.onerror = function() {
+            ws.onerror = function(err) {
+                logAudioEvent('ws_error');
                 isConnected = false;
                 isPlaying = false;
                 updateUI();
             };
         } catch (e) {
+            logAudioEvent('ws_init_exception', { error: e.message });
             clearTimeout(reconnectTimer);
             reconnectTimer = setTimeout(connectWebSocket, 1500);
         }
     }
 
-    // Initialize UI and WebSocket when DOM is ready
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => {
-            createUI();
-            connectWebSocket();
-            startPcmWatchdog();
-        });
-    } else {
+    function init() {
+        logAudioEvent('audio_client_init');
         createUI();
         connectWebSocket();
         startPcmWatchdog();
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
     }
 })();
