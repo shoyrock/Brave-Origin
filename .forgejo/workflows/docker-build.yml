@@ -74,6 +74,12 @@ jobs:
           echo "--- Checking Container Process Tree ---"
           docker exec "${SMOKE_CONTAINER}" ps -ef || true
 
+          echo "--- Verifying Official Brave Origin Package ---"
+          docker exec "${SMOKE_CONTAINER}" dpkg -l brave-origin
+          if docker exec "${SMOKE_CONTAINER}" dpkg -l brave-browser >/dev/null 2>&1; then
+            echo "ERROR: Forbidden standard brave-browser package detected!" >&2; exit 1
+          fi
+
           echo "--- Verifying Wayland Socket & Display ---"
           docker exec "${SMOKE_CONTAINER}" sh -c 'ls -la /tmp/runtime-braveuser/wayland-*' || true
 
@@ -99,6 +105,15 @@ jobs:
             docker exec "${SMOKE_CONTAINER}" cat /config/state/brave.log >&2 || true
             docker exec "${SMOKE_CONTAINER}" cat /config/state/session.log >&2 || true
             exit 1
+          fi
+
+          echo "--- Verifying Native Wayland / Ozone flags & Sandboxing ---"
+          BRAVE_CMD=$(docker exec "${SMOKE_CONTAINER}" ps -eo args | grep '/opt/brave.com/brave-origin/brave' | head -1 || true)
+          if echo "${BRAVE_CMD}" | grep -q -- '--no-sandbox'; then
+            echo "ERROR: Forbidden --no-sandbox flag found in Brave command line!" >&2; exit 1
+          fi
+          if ! echo "${BRAVE_CMD}" | grep -q 'ozone-platform=wayland'; then
+            echo "ERROR: Missing --ozone-platform=wayland in Brave command line!" >&2; exit 1
           fi
 
           echo "--- Asserting Zero X11/Xwayland/KasmVNC Processes ---"
@@ -129,7 +144,7 @@ jobs:
           docker rm "${SMOKE_CONTAINER}" >/dev/null 2>&1 || true
 
           echo "========================================================"
-          echo " REGRESSION TEST 2: Authentication Enabled (KASM_AUTH_ENABLED=true)"
+          echo " REGRESSION TEST 2: Authentication Enabled (AUTH_ENABLED=true)"
           echo "========================================================"
           docker run --detach \
             --name "${SMOKE_CONTAINER}" \
@@ -140,8 +155,8 @@ jobs:
             --env TZ=Etc/UTC \
             --env AUTO_UPDATE=false \
             --env ENABLE_AUDIO=true \
-            --env KASM_AUTH_ENABLED=true \
-            --env KASM_PASSWORD="WaylandSecret123!" \
+            --env AUTH_ENABLED=true \
+            --env AUTH_PASSWORD="WaylandSecret123!" \
             "${LOCAL_IMAGE}"
 
           sleep 10
