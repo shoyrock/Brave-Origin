@@ -43,8 +43,8 @@ fi
 echo "[start-session] Starting Selkies Wayland display & streaming server on 127.0.0.1:8082..."
 export SELKIES_AUDIO_ENABLED="${AUDIO_ENABLED}"
 export SELKIES_ENABLE_DUAL_MODE=false
+export SELKIES_PORT=8081
 export CUSTOM_WS_PORT=8082
-export SELKIES_PORT=8082
 
 python3 -m selkies \
     --mode=websockets \
@@ -115,6 +115,7 @@ fi
 
 # 7. Launch Brave Origin Natively on Wayland
 echo "[start-session] Starting Brave Origin with native Wayland Ozone backend..."
+rm -f /config/profile/Singleton* 2>/dev/null || true
 exec /opt/brave.com/brave-origin/brave \
     --ozone-platform=wayland \
     --enable-features=UseOzonePlatform \
