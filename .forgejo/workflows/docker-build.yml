@@ -138,6 +138,14 @@ jobs:
             echo "TEST 1 Failed: Status was ${STATUS}" >&2; exit 1
           fi
 
+          echo "--- Verifying Audio Relay Health on Port 4901 ---"
+          AUDIO_HEALTH=$(docker exec "${SMOKE_CONTAINER}" curl -k -fsS https://127.0.0.1:4901/ || echo "failed")
+          if [ "${AUDIO_HEALTH}" = "Kasm Audio Live" ]; then
+            echo "TEST 1 Audio Relay Healthcheck: SUCCESS"
+          else
+            echo "TEST 1 Failed: Audio health check was ${AUDIO_HEALTH}" >&2; exit 1
+          fi
+
           echo "--- Setting Persistent Credentials with reset-password.sh ---"
           docker exec "${SMOKE_CONTAINER}" /usr/local/bin/reset-password.sh "TestSecretPassword123!"
 

@@ -304,7 +304,8 @@ Chromium profiles undergo irreversible database migrations (SQLite schemas, Leve
 | `BRAVE_STARTUP_TIMEOUT` | `15` | Browser startup stabilization timeout in seconds |
 | `BRAVE_ORIGIN_VERSION`| `latest` | Pin a specific package version (e.g. `1.93.136`) or use `latest` |
 | `ENABLE_GPU` | `true` | Enable GPU hardware acceleration if supported and `/dev/dri` is passed |
-| `ENABLE_AUDIO` | `true` | Enable audio subsystem |
+| `ENABLE_AUDIO` | `true` | Enable PulseAudio virtual device and Secure Audio WebSocket relay |
+| `AUDIO_PORT` | `4901` | Host port mapped to Kasm Audio Secure WebSocket relay |
 | `DRI_NODE` | `/dev/dri/renderD128` | Direct Rendering Infrastructure node for hardware acceleration |
 | `BRAVE_FLAGS` | `""` | Extra CLI flags passed to Brave Origin (e.g. `"--incognito"`) |
 

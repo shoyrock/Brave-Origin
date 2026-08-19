@@ -23,6 +23,7 @@
 
   <!-- Web Port -->
   <Config Name="Web HTTPS Port" Target="8443" Default="8443" Mode="tcp" Description="KasmVNC Web HTTPS port for remote browser access." Type="Port" Display="always" Required="true" Mask="false">8443</Config>
+  <Config Name="Audio WebSocket Port" Target="4901" Default="4901" Mode="tcp" Description="Kasm Secure Audio WebSocket port for remote browser audio streaming." Type="Port" Display="always" Required="false" Mask="false">4901</Config>
 
   <!-- Appdata Storage -->
   <Config Name="Config &amp; Profile Storage" Target="/config" Default="/mnt/user/appdata/brave-origin" Mode="rw" Description="Persistent directory for browser profile, downloads, and KasmVNC state." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/brave-origin</Config>

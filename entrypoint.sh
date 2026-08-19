@@ -234,10 +234,23 @@ else
     fi
 fi
 
-# 8. User and Storage Permissions Handling
+# 8. Web Client Audio Integration
+if [ "${ENABLE_AUDIO:-true}" = "true" ]; then
+    if [ -f "/etc/kasmvnc/audio-client.js" ]; then
+        cp -f /etc/kasmvnc/audio-client.js /usr/share/kasmvnc/www/audio-client.js 2>/dev/null || true
+        chmod 644 /usr/share/kasmvnc/www/audio-client.js 2>/dev/null || true
+        if ! grep -q 'audio-client.js' /usr/share/kasmvnc/www/index.html 2>/dev/null; then
+            sed -i 's|</body>|<script src="audio-client.js"></script></body>|' /usr/share/kasmvnc/www/index.html 2>/dev/null || true
+        fi
+    fi
+else
+    sed -i 's|<script src="audio-client.js"></script>||g' /usr/share/kasmvnc/www/index.html 2>/dev/null || true
+fi
+
+# 9. User and Storage Permissions Handling
 chown -R braveuser:braveuser /config /tmp/runtime-braveuser /tmp/brave-cache /tmp/.X11-unix
 
-# 9. Startup Update Check & Downgrade Assessment
+# 10. Startup Update Check & Downgrade Assessment
 LAST_VERSION_FILE="/config/state/last-brave-version"
 LAST_RECORDED_VER=""
 if [ -f "${LAST_VERSION_FILE}" ]; then

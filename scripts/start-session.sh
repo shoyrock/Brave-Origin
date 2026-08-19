@@ -101,6 +101,28 @@ else
 fi
 
 # 4. Audio setup
+AUDIO_PID=""
+start_audio_relay() {
+    if [ "${ENABLE_AUDIO:-true}" = "true" ] && [ -f "/usr/local/bin/audio-server.py" ]; then
+        echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Starting Secure Audio WebSocket Relay on port ${AUDIO_PORT:-4901}..."
+        python3 /usr/local/bin/audio-server.py >> "${STATE_DIR}/audio-relay.log" 2>&1 &
+        AUDIO_PID=$!
+        sleep 0.5
+        if kill -0 "${AUDIO_PID}" 2>/dev/null; then
+            echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Audio relay running (PID: ${AUDIO_PID})."
+        fi
+    fi
+}
+
+check_audio_relay() {
+    if [ "${ENABLE_AUDIO:-true}" = "true" ] && [ -f "/usr/local/bin/audio-server.py" ]; then
+        if [ -z "${AUDIO_PID}" ] || ! kill -0 "${AUDIO_PID}" 2>/dev/null; then
+            echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Audio relay not running. Relaunching..."
+            start_audio_relay
+        fi
+    fi
+}
+
 if [ "${ENABLE_AUDIO:-true}" = "true" ]; then
     if [ -n "${PULSE_SERVER}" ]; then
         echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Using external PulseAudio server: ${PULSE_SERVER}"
@@ -108,6 +130,7 @@ if [ "${ENABLE_AUDIO:-true}" = "true" ]; then
         echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Starting internal PulseAudio daemon..."
         pulseaudio --start --exit-idle-time=-1 --daemonize=true >/dev/null 2>&1 || true
     fi
+    start_audio_relay
 fi
 
 # 5. Locate official Brave Origin binary
@@ -325,6 +348,9 @@ while true; do
         tail -n 500 "${BRAVE_LOG}" > "${BRAVE_LOG}.tmp" && mv -f "${BRAVE_LOG}.tmp" "${BRAVE_LOG}"
     fi
 
+    # Ensure audio relay daemon is active if ENABLE_AUDIO=true
+    check_audio_relay
+
     set_status_atomic "STARTING"
     echo "[brave] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Launching Brave Origin (Version: ${CURRENT_VER})..."
     "${BRAVE_BIN}" "${BRAVE_ARGS[@]}" 2>&1 | tee -a "${BRAVE_LOG}" &
@@ -409,6 +435,11 @@ done
 # Release profile lock when supervisor terminates
 flock -u 300 2>/dev/null || true
 exec 300>&- 2>/dev/null || true
+
+# Cleanup Audio Relay
+if [ -n "${AUDIO_PID}" ] && kill -0 "${AUDIO_PID}" 2>/dev/null; then
+    kill -TERM "${AUDIO_PID}" 2>/dev/null || true
+fi
 
 # Cleanup Openbox
 if [ -n "${OPENBOX_PID}" ] && kill -0 "${OPENBOX_PID}" 2>/dev/null; then

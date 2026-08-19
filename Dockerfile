@@ -176,12 +176,15 @@ COPY scripts/start-session.sh /usr/local/bin/start-session.sh
 COPY scripts/update-brave.sh /usr/local/bin/update-brave.sh
 COPY scripts/profile-control.sh /usr/local/bin/profile-control.sh
 COPY scripts/reset-password.sh /usr/local/bin/reset-password.sh
+COPY scripts/audio-server.py /usr/local/bin/audio-server.py
+COPY config/audio-client.js /etc/kasmvnc/audio-client.js
 
 RUN chmod +x /usr/local/bin/entrypoint.sh \
              /usr/local/bin/start-session.sh \
              /usr/local/bin/update-brave.sh \
              /usr/local/bin/profile-control.sh \
-             /usr/local/bin/reset-password.sh
+             /usr/local/bin/reset-password.sh \
+             /usr/local/bin/audio-server.py
 
 # Default environment configuration
 ENV PUID=1000 \
@@ -189,6 +192,7 @@ ENV PUID=1000 \
     UMASK=022 \
     TZ=UTC \
     WEB_PORT=8443 \
+    AUDIO_PORT=4901 \
     DISPLAY_WIDTH=1920 \
     DISPLAY_HEIGHT=1080 \
     KASM_AUTH_ENABLED=false \
@@ -209,8 +213,8 @@ ENV PUID=1000 \
 # Persistent browser profile, downloads, and Kasm configuration volume
 VOLUME ["/config"]
 
-# Expose KasmVNC HTTPS Web Client Port
-EXPOSE 8443
+# Expose KasmVNC HTTPS Web Client Port and Secure Audio WebSocket Port
+EXPOSE 8443 4901
 
 # Health check to validate KasmVNC HTTPS responsiveness
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
