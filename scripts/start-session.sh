@@ -31,9 +31,12 @@ fi
 # 2. Start PulseAudio Virtual Sink (if ENABLE_AUDIO=true)
 if [ "${ENABLE_AUDIO:-true}" = "true" ]; then
     echo "[start-session] Initializing PulseAudio virtual sink..."
+    mkdir -p "${XDG_RUNTIME_DIR}/pulse"
     pulseaudio --exit-idle-time=-1 --daemonize=true || true
-    pactl load-module module-null-sink sink_name=auto_null sink_properties=device.description="Virtual_Null_Output" 2>/dev/null || true
-    pactl set-default-sink auto_null 2>/dev/null || true
+    pactl load-module module-native-protocol-unix auth-anonymous=1 socket="${XDG_RUNTIME_DIR}/pulse/native" 2>/dev/null || true
+    pactl load-module module-null-sink sink_name=output sink_properties=device.description="Default_Audio_Output" 2>/dev/null || true
+    pactl set-default-sink output 2>/dev/null || true
+    export PULSE_SERVER="unix:${XDG_RUNTIME_DIR}/pulse/native"
     export AUDIO_ENABLED=true
 else
     export AUDIO_ENABLED=false
@@ -42,6 +45,7 @@ fi
 # 3. Start Selkies Streaming Server (Smithay Wayland Display)
 echo "[start-session] Starting Selkies Wayland display & streaming server on 127.0.0.1:8082..."
 export SELKIES_AUDIO_ENABLED="${AUDIO_ENABLED}"
+export SELKIES_AUDIO_DEVICE_NAME="output.monitor"
 export SELKIES_ENABLE_DUAL_MODE=false
 export SELKIES_PORT=8082
 export CUSTOM_WS_PORT=8082
