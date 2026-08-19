@@ -22,6 +22,7 @@ unset DISPLAY
 
 mkdir -p "${XDG_RUNTIME_DIR}" /config/state /config/downloads /config/profile
 chmod 700 "${XDG_RUNTIME_DIR}"
+rm -f "${XDG_RUNTIME_DIR}"/wayland-* "${XDG_RUNTIME_DIR}"/pulse/pid 2>/dev/null || true
 
 # 1. Start D-Bus Session Daemon
 if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
@@ -52,6 +53,8 @@ export CUSTOM_WS_PORT=8082
 
 python3 -m selkies \
     --mode=websockets \
+    --wayland=true \
+    --app-wayland-display=wayland-0 \
     > /config/state/selkies.log 2>&1 &
 SELKIES_PID=$!
 echo "${SELKIES_PID}" > /config/state/selkies.pid
