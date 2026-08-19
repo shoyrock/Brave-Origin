@@ -77,8 +77,15 @@ jobs:
           echo "--- Verifying Wayland Socket & Display ---"
           docker exec "${SMOKE_CONTAINER}" sh -c 'ls -la /tmp/runtime-braveuser/wayland-*' || true
 
-          echo "--- Verifying Selkies WebSocket Listener on Port 8082 ---"
-          docker exec "${SMOKE_CONTAINER}" ss -tlpn | grep 8082 || true
+          echo "--- Verifying Selkies WebSocket Listener bound to loopback 127.0.0.1:8082 ---"
+          SELKIES_LISTEN=$(docker exec "${SMOKE_CONTAINER}" ss -tlnp | grep ':8082' || true)
+          echo "${SELKIES_LISTEN}"
+          if echo "${SELKIES_LISTEN}" | grep -q '0\.0\.0\.0:8082'; then
+            echo "ERROR: Selkies is listening on 0.0.0.0:8082 instead of 127.0.0.1:8082!" >&2; exit 1
+          fi
+          if ! echo "${SELKIES_LISTEN}" | grep -q '127\.0\.0\.1:8082'; then
+            echo "ERROR: Selkies is NOT listening on 127.0.0.1:8082!" >&2; exit 1
+          fi
 
           echo "--- Verifying Labwc and Brave Origin Process Status ---"
           if ! docker exec "${SMOKE_CONTAINER}" pgrep -x labwc; then

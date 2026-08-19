@@ -53,6 +53,8 @@ export SELKIES_PORT=8082
 export CUSTOM_WS_PORT=8082
 
 python3 -m selkies \
+    --addr=127.0.0.1 \
+    --port=8082 \
     --mode=websockets \
     --wayland=true \
     --app-wayland-display=wayland-0 \
