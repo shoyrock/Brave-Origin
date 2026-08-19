@@ -43,7 +43,7 @@ fi
 echo "[start-session] Starting Selkies Wayland display & streaming server on 127.0.0.1:8082..."
 export SELKIES_AUDIO_ENABLED="${AUDIO_ENABLED}"
 export SELKIES_ENABLE_DUAL_MODE=false
-export SELKIES_PORT=8081
+export SELKIES_PORT=8082
 export CUSTOM_WS_PORT=8082
 
 python3 -m selkies \
