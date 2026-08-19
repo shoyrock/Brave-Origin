@@ -56,34 +56,35 @@ python3 -m selkies \
 SELKIES_PID=$!
 echo "${SELKIES_PID}" > /config/state/selkies.pid
 
-# 4. Wait for Wayland socket to be created by Pixelflux / Smithay
-echo "[start-session] Waiting for Wayland display socket in ${XDG_RUNTIME_DIR}..."
+# 4. Wait for Wayland display socket created by Pixelflux / Smithay
+echo "[start-session] Waiting for root Wayland display socket (Smithay) in ${XDG_RUNTIME_DIR}..."
 TIMEOUT=30
 ELAPSED=0
-WAYLAND_SOCKET=""
-while [ -z "${WAYLAND_SOCKET}" ]; do
+SMITHAY_SOCKET=""
+while [ -z "${SMITHAY_SOCKET}" ]; do
     for s in "${XDG_RUNTIME_DIR}"/wayland-*; do
         if [ -S "${s}" ]; then
-            WAYLAND_SOCKET="${s}"
-            export WAYLAND_DISPLAY="$(basename "${s}")"
+            SMITHAY_SOCKET="${s}"
+            export SMITHAY_DISPLAY="$(basename "${s}")"
+            export WAYLAND_DISPLAY="${SMITHAY_DISPLAY}"
             break
         fi
     done
-    if [ -n "${WAYLAND_SOCKET}" ]; then
+    if [ -n "${SMITHAY_SOCKET}" ]; then
         break
     fi
     sleep 0.2
     ELAPSED=$((ELAPSED + 1))
     if [ "${ELAPSED}" -ge "$((TIMEOUT * 5))" ]; then
-        echo "[start-session] ERROR: Timeout waiting for Wayland socket in ${XDG_RUNTIME_DIR}!" >&2
+        echo "[start-session] ERROR: Timeout waiting for root Wayland socket in ${XDG_RUNTIME_DIR}!" >&2
         cat /config/state/selkies.log >&2 || true
         exit 1
     fi
 done
-echo "[start-session] Wayland socket detected and ready: ${WAYLAND_SOCKET} (WAYLAND_DISPLAY=${WAYLAND_DISPLAY})"
+echo "[start-session] Root Wayland display detected: ${SMITHAY_SOCKET} (WAYLAND_DISPLAY=${WAYLAND_DISPLAY})"
 
-# 5. Start Labwc Wayland Window Manager
-echo "[start-session] Starting Labwc window manager..."
+# 5. Start Labwc Wayland Window Manager on root display
+echo "[start-session] Starting Labwc window manager on root display ${WAYLAND_DISPLAY}..."
 mkdir -p /config/.config/labwc
 if [ ! -f "/config/.config/labwc/rc.xml" ]; then
     cat << 'EOF' > /config/.config/labwc/rc.xml
@@ -104,7 +105,33 @@ labwc -c /config/.config/labwc/rc.xml > /config/state/labwc.log 2>&1 &
 LABWC_PID=$!
 echo "${LABWC_PID}" > /config/state/labwc.pid
 
-sleep 1
+# Wait for Labwc client-facing Wayland socket (nested compositor socket)
+echo "[start-session] Waiting for Labwc application Wayland socket in ${XDG_RUNTIME_DIR}..."
+ELAPSED=0
+LABWC_SOCKET=""
+while [ -z "${LABWC_SOCKET}" ]; do
+    for s in "${XDG_RUNTIME_DIR}"/wayland-*; do
+        if [ -S "${s}" ] && [ "${s}" != "${SMITHAY_SOCKET}" ]; then
+            LABWC_SOCKET="${s}"
+            export LABWC_DISPLAY="$(basename "${s}")"
+            break
+        fi
+    done
+    if [ -n "${LABWC_SOCKET}" ]; then
+        break
+    fi
+    sleep 0.2
+    ELAPSED=$((ELAPSED + 1))
+    if [ "${ELAPSED}" -ge "$((TIMEOUT * 5))" ]; then
+        echo "[start-session] Warning: Labwc secondary socket not detected, continuing with ${WAYLAND_DISPLAY}" >&2
+        break
+    fi
+done
+
+if [ -n "${LABWC_SOCKET}" ]; then
+    export WAYLAND_DISPLAY="${LABWC_DISPLAY}"
+    echo "[start-session] Labwc application Wayland socket ready: ${LABWC_SOCKET} (WAYLAND_DISPLAY=${WAYLAND_DISPLAY})"
+fi
 
 # 6. GPU Detection & Flags Configuration
 GPU_FLAGS=""
