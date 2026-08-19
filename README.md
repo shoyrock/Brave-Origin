@@ -341,7 +341,7 @@ Restart the container with `docker compose restart`.
 ## GPU Acceleration & Rendering Options
 
 ### Software Rendering (Default)
-By default, the container operates with robust software rendering via CPU without requiring host GPU device nodes. This is suitable for Docker Desktop (Windows/macOS) and headless servers.
+By default, the container operates with CPU software rendering without requiring host GPU device nodes. This is suitable for Docker Desktop (Windows/macOS) and headless servers.
 
 ### Intel / AMD Graphics Passthrough (Linux / Unraid)
 On Linux or Unraid systems with `/dev/dri` available, pass the GPU device using `compose.gpu.yaml`:
@@ -385,16 +385,21 @@ brave-origin-docker/
 ├── AGENTS.md
 ├── CLAUDE.md
 ├── config/
-│   └── kasmvnc.yaml
+│   ├── audio-client.js
+│   ├── clipboard-client.js
+│   ├── kasmvnc.yaml
+│   └── nginx.conf
 ├── scripts/
-│   ├── start-session.sh
-│   ├── update-brave.sh
+│   ├── audio-server.py
 │   ├── profile-control.sh
-│   └── reset-password.sh
+│   ├── reset-password.sh
+│   ├── start-session.sh
+│   └── update-brave.sh
 └── skills/
     ├── file-upload/
     ├── frontend-design/
-    └── html-communication/
+    ├── html-communication/
+    └── unslop/
 ```
 
 ---
