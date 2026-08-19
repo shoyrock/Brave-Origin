@@ -7,3 +7,5 @@ config/state/
 appdata/
 *.log
 scratch/
+.agents/
+.unslop/

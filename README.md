@@ -398,8 +398,7 @@ brave-origin-docker/
 └── skills/
     ├── file-upload/
     ├── frontend-design/
-    ├── html-communication/
-    └── unslop/
+    └── html-communication/
 ```
 
 ---
