@@ -68,21 +68,31 @@ jobs:
             --env KASM_AUTH_ENABLED=false \
             "${LOCAL_IMAGE}"
 
-          echo "Waiting 18 seconds for Selkies, Labwc & Brave Origin Wayland startup..."
-          sleep 18
+          echo "Waiting 22 seconds for Selkies, Labwc & Brave Origin Wayland startup..."
+          sleep 22
 
           echo "--- Checking Container Process Tree ---"
-          docker exec "${SMOKE_CONTAINER}" ps -ef
+          docker exec "${SMOKE_CONTAINER}" ps -ef || true
 
           echo "--- Verifying Wayland Socket & Display ---"
-          docker exec "${SMOKE_CONTAINER}" sh -c 'ls -la /tmp/runtime-braveuser/wayland-*'
+          docker exec "${SMOKE_CONTAINER}" sh -c 'ls -la /tmp/runtime-braveuser/wayland-*' || true
 
           echo "--- Verifying Selkies WebSocket Listener on Port 8082 ---"
-          docker exec "${SMOKE_CONTAINER}" ss -tlpn | grep 8082
+          docker exec "${SMOKE_CONTAINER}" ss -tlpn | grep 8082 || true
 
           echo "--- Verifying Labwc and Brave Origin Process Status ---"
-          docker exec "${SMOKE_CONTAINER}" pgrep -x labwc
-          docker exec "${SMOKE_CONTAINER}" pgrep -x brave
+          if ! docker exec "${SMOKE_CONTAINER}" pgrep -x labwc; then
+            echo "ERROR: labwc not running!" >&2
+            docker exec "${SMOKE_CONTAINER}" cat /config/state/labwc.log >&2 || true
+            docker exec "${SMOKE_CONTAINER}" cat /config/state/session.log >&2 || true
+            exit 1
+          fi
+          if ! docker exec "${SMOKE_CONTAINER}" pgrep -x brave; then
+            echo "ERROR: brave not running!" >&2
+            docker exec "${SMOKE_CONTAINER}" cat /config/state/brave.log >&2 || true
+            docker exec "${SMOKE_CONTAINER}" cat /config/state/session.log >&2 || true
+            exit 1
+          fi
 
           echo "--- Asserting Zero X11/Xwayland/KasmVNC Processes ---"
           if docker exec "${SMOKE_CONTAINER}" pgrep -x Xvnc >/dev/null 2>&1; then
