@@ -36,6 +36,7 @@ RUN set -eux; \
         fonts-dejavu-core \
         fonts-noto-color-emoji \
         xauth \
+        xclip \
         x11-utils \
         x11-xkb-utils \
         xkb-data \
