@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
       args:
         BRAVE_ORIGIN_VERSION: ${BRAVE_ORIGIN_VERSION:-latest}
-    image: brave-origin-kasmvnc:latest
+    image: ${IMAGE_NAME:-forgejo.foss.homes/shoy/brave-origin:wayland}
     container_name: brave-origin
     hostname: ${CONTAINER_HOSTNAME:-brave-origin}
     restart: unless-stopped
@@ -22,10 +22,10 @@ services:
       - WEB_PORT=${WEB_PORT:-8443}
       - DISPLAY_WIDTH=${DISPLAY_WIDTH:-1920}
       - DISPLAY_HEIGHT=${DISPLAY_HEIGHT:-1080}
-      - KASM_AUTH_ENABLED=${KASM_AUTH_ENABLED:-false}
-      - KASM_USER=${KASM_USER:-brave}
-      - KASM_PASSWORD=${KASM_PASSWORD:-}
-      - KASM_PASSWORD_FILE=${KASM_PASSWORD_FILE:-}
+      - AUTH_ENABLED=${AUTH_ENABLED:-${KASM_AUTH_ENABLED:-false}}
+      - AUTH_USER=${AUTH_USER:-${KASM_USER:-brave}}
+      - AUTH_PASSWORD=${AUTH_PASSWORD:-${KASM_PASSWORD:-}}
+      - AUTH_PASSWORD_FILE=${AUTH_PASSWORD_FILE:-${KASM_PASSWORD_FILE:-}}
       - AUTO_UPDATE=${AUTO_UPDATE:-true}
       - UPDATE_INTERVAL=${UPDATE_INTERVAL:-21600}
       - DOWNGRADE_RETRY_INTERVAL=${DOWNGRADE_RETRY_INTERVAL:-300}

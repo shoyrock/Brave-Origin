@@ -1,0 +1,211 @@
+diff --git a/addons/selkies-web-core/selkies-ws-core.js b/addons/selkies-web-core/selkies-ws-core.js
+index ed3c7c9..af8d545 100644
+--- a/addons/selkies-web-core/selkies-ws-core.js
++++ b/addons/selkies-web-core/selkies-ws-core.js
+@@ -3603,6 +3603,9 @@ function initWebsockets() {
+       if (!videoPausedForHiddenTab && isVideoPipelineActive) armVisibleFrameProbe();
+       if (videoPausedForHiddenTab) {
+         videoPausedForHiddenTab = false;
++        if (audioWorkletProcessorPort) {
++          try { audioWorkletProcessorPort.postMessage({ type: 'reset' }); } catch (_) {}
++        }
+         console.log('Tab is visible, resuming the video pipeline paused on hide.');
+         // Keyed on the pause this handler performed, never on the pipeline
+         // flag: anything that reports the pipeline running while the tab is
+@@ -3984,8 +3987,8 @@ function initWebsockets() {
+                 this.currentAudioData = null;
+                 this.currentDataOffset = 0;
+ 
+-                this.TARGET_BUFFER_PACKETS = 3;
+-                this.MAX_BUFFER_PACKETS = 8;
++                this.TARGET_BUFFER_PACKETS = 2;
++                this.MAX_BUFFER_PACKETS = 5;
+ 
+                 // Concealment counters: zero-filled samples output on underrun, and
+                 // packets dropped by the drop-oldest ring when the queue overflows.
+@@ -4003,6 +4006,10 @@ function initWebsockets() {
+                             this.droppedOldest++;
+                         }
+                         this.audioBufferQueue.push(pcmData);
++                    } else if (event.data.type === 'reset') {
++                        this.audioBufferQueue = [];
++                        this.currentAudioData = null;
++                        this.currentDataOffset = 0;
+                     } else if (event.data.type === 'getBufferSize') {
+                         const bufferMillis = this.audioBufferQueue.reduce((total, buf) => total + (buf.length / this.channels / sampleRate) * 1000, 0);
+                         const level = this._levelCount > 0 ? Math.sqrt(this._levelAcc / this._levelCount) : 0;
+@@ -6099,6 +6106,9 @@ function cleanup() {
+ }
+ 
+ function performServerInitiatedVideoReset(reason = "unknown") {
++  if (audioWorkletProcessorPort) {
++    try { audioWorkletProcessorPort.postMessage({ type: 'reset' }); } catch (_) {}
++  }
+   console.log(`Performing server-initiated video reset. Reason: ${reason}. Current lastReceivedVideoFrameId before reset: ${lastReceivedVideoFrameId}`);
+ 
+   if (isSharedMode) {
+diff --git a/src/selkies/input_handler.py b/src/selkies/input_handler.py
+index e745f81..64fa92f 100644
+--- a/src/selkies/input_handler.py
++++ b/src/selkies/input_handler.py
+@@ -4934,35 +4934,49 @@ class WebRTCInput:
+     async def _app_clipboard_read(self, use_binary: bool) -> tuple:
+         """Read the selection of the compositor the apps use over the pixelflux
+         data-control ABI; (None, None) when it is empty or unreadable."""
++        wl_target_display = str(self._app_wayland_display())
+         read_fn = getattr(self.wayland_input, 'clipboard_read_app', None)
+         types_fn = getattr(self.wayland_input, 'clipboard_types_app', None)
+-        if read_fn is None or types_fn is None:
+-            # pixelflux builds without the app-compositor data-control ABI
+-            # report no data rather than failing the clipboard path.
+-            return None, None
+-        display = self._app_wayland_display()
+         loop = asyncio.get_running_loop()
++        if read_fn is not None and types_fn is not None:
++            try:
++                available_types = await loop.run_in_executor(
++                    None, types_fn, wl_target_display)
++                if use_binary:
++                    image_mimes = ['image/png', 'image/jpeg', 'image/bmp', 'image/webp',
++                                   'image/svg+xml', 'image/svg']
++                    target_mime = next((m for m in image_mimes if m in available_types), None)
++                    if target_mime:
++                        data = await loop.run_in_executor(
++                            None, read_fn, wl_target_display, target_mime)
++                        if data:
++                            return bytes(data), target_mime
++                text_mimes = ['text/plain;charset=utf-8', 'text/plain',
++                              'UTF8_STRING', 'STRING', 'TEXT']
++                source_mime = next((m for m in text_mimes if m in available_types), None)
++                if source_mime:
++                    data = await loop.run_in_executor(None, read_fn, wl_target_display, source_mime)
++                    if data is not None:
++                        return data.decode('utf-8', errors='replace'), 'text/plain'
++            except Exception as e:
++                logger_webrtc_input.warning(f"data-control clipboard read failed: {e}")
++
++        # Fallback to wl-paste when C-ABI is unavailable in ScreenCapture
+         try:
+-            available_types = await loop.run_in_executor(
+-                None, types_fn, display)
+-            if use_binary:
+-                image_mimes = ['image/png', 'image/jpeg', 'image/bmp', 'image/webp',
+-                               'image/svg+xml', 'image/svg']
+-                target_mime = next((m for m in image_mimes if m in available_types), None)
+-                if target_mime:
+-                    data = await loop.run_in_executor(
+-                        None, read_fn, display, target_mime)
+-                    if data:
+-                        return bytes(data), target_mime
+-            text_mimes = ['text/plain;charset=utf-8', 'text/plain',
+-                          'UTF8_STRING', 'STRING', 'TEXT']
+-            source_mime = next((m for m in text_mimes if m in available_types), None)
+-            if source_mime:
+-                data = await loop.run_in_executor(None, read_fn, display, source_mime)
+-                if data is not None:
+-                    return data.decode('utf-8', errors='replace'), 'text/plain'
++            env = os.environ.copy()
++            env["WAYLAND_DISPLAY"] = wl_target_display
++            if "XDG_RUNTIME_DIR" not in env:
++                env["XDG_RUNTIME_DIR"] = "/tmp/runtime-braveuser"
++            proc_r = await subprocess.create_subprocess_exec(
++                "wl-paste", "--type", "text/plain;charset=utf-8", "--no-newline",
++                stdout=subprocess.PIPE,
++                env=env
++            )
++            stdout, _ = await self._communicate_or_kill(proc_r, 1, "wl-paste")
++            if proc_r.returncode == 0 and stdout is not None:
++                return stdout.decode("utf-8", errors="replace"), "text/plain"
+         except Exception as e:
+-            logger_webrtc_input.warning(f"data-control clipboard read failed: {e}")
++            logger_webrtc_input.debug(f"wl-paste fallback read failed: {e}")
+         return None, None
+ 
+     async def read_clipboard(self, use_binary: bool = False) -> tuple:
+@@ -5090,6 +5104,7 @@ class WebRTCInput:
+         self._clipboard_last_bytes = input_bytes
+ 
+         if self.is_wayland:
++            wl_target_display = str(self._app_wayland_display())
+             # pixelflux's own selection is set in-process; a separate app
+             # compositor's through the data-control client.
+             if not self._has_separate_app_compositor():
+@@ -5101,20 +5116,39 @@ class WebRTCInput:
+                     return False
+             # Apps paste whichever mime they prefer, so text is offered under
+             # every conventional text target.
+-            if mime_type == "text/plain":
+-                entries = [(m, input_bytes) for m in (
+-                    "text/plain;charset=utf-8", "text/plain",
+-                    "UTF8_STRING", "STRING", "TEXT")]
+-            else:
+-                entries = [(mime_type, input_bytes)]
++            write_fn = getattr(self.wayland_input, 'clipboard_write_app', None)
++            if write_fn is not None:
++                if mime_type == "text/plain":
++                    entries = [(m, input_bytes) for m in (
++                        "text/plain;charset=utf-8", "text/plain",
++                        "UTF8_STRING", "STRING", "TEXT")]
++                else:
++                    entries = [(mime_type, input_bytes)]
++                try:
++                    await asyncio.get_running_loop().run_in_executor(
++                        None, write_fn, wl_target_display, entries)
++                    return True
++                except Exception as e:
++                    logger_webrtc_input.warning(f"data-control clipboard write failed: {e}")
++
++            # Fallback to wl-copy for the app compositor
+             try:
+-                await asyncio.get_running_loop().run_in_executor(
+-                    None, self.wayland_input.clipboard_write_app,
+-                    self._app_wayland_display(), entries)
+-                return True
++                env = os.environ.copy()
++                env["WAYLAND_DISPLAY"] = wl_target_display
++                if "XDG_RUNTIME_DIR" not in env:
++                    env["XDG_RUNTIME_DIR"] = "/tmp/runtime-braveuser"
++                target_type = mime_type if mime_type and mime_type != "text/plain" else "text/plain;charset=utf-8"
++                proc_w = await subprocess.create_subprocess_exec(
++                    "wl-copy", "--type", target_type,
++                    stdin=subprocess.PIPE,
++                    env=env
++                )
++                await self._communicate_or_kill(proc_w, 2, "wl-copy", input=input_bytes)
++                if proc_w.returncode == 0:
++                    return True
+             except Exception as e:
+-                logger_webrtc_input.warning(f"data-control clipboard write failed: {e}")
+-                return False
++                logger_webrtc_input.warning(f"wl-copy fallback failed: {e}", exc_info=True)
++            return False
+ 
+         env = os.environ.copy()
+         if 'LANG' not in env or env['LANG'] == 'C':
+diff --git a/src/selkies/selkies.py b/src/selkies/selkies.py
+index f256be3..677b09d 100644
+--- a/src/selkies/selkies.py
++++ b/src/selkies/selkies.py
+@@ -1781,7 +1781,7 @@ class DataStreamingServer(BaseStreamingService):
+ 
+             self.pcmflux_callback = self._pcmflux_audio_callback
+             self.pcmflux_module = AudioCapture()
+-            self.pcmflux_audio_queue = asyncio.Queue(maxsize=getattr(self, 'BACKPRESSURE_QUEUE_SIZE', 120))
++            self.pcmflux_audio_queue = asyncio.Queue(maxsize=15)
+ 
+             await self.pcmflux_capture_loop.run_in_executor(
+                 None, self.pcmflux_module.start_capture, self.pcmflux_settings, self.pcmflux_callback
+@@ -3544,6 +3544,13 @@ class DataStreamingServer(BaseStreamingService):
+                                 # resurrect a stream the user stopped with STOP_VIDEO.
+                                 if not initial_settings_processed:
+                                     display_state['video_active'] = True
++                            if self.pcmflux_audio_queue is not None:
++                                while not self.pcmflux_audio_queue.empty():
++                                    try:
++                                        self.pcmflux_audio_queue.get_nowait()
++                                        self.pcmflux_audio_queue.task_done()
++                                    except (asyncio.QueueEmpty, ValueError):
++                                        break
+                                 display_state['acknowledged_frame_id'] = -1
+                                 display_state['last_ack_update_time'] = time.monotonic()
+                                 display_state['sent_timestamps'].clear()

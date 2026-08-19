@@ -1,186 +1,152 @@
 # syntax=docker/dockerfile:1
+FROM ghcr.io/linuxserver/baseimage-selkies:debiantrixie AS selkies-upstream
+
+# Pinned Selkies Source & Web Dashboard Build at exact commit 92dea42fc70bfcb52e6d98c4e6854872badfe621
+FROM node:20-bookworm-slim AS selkies-build
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates python3 patch && \
+    git clone https://github.com/selkies-project/selkies.git /selkies-src && \
+    cd /selkies-src && \
+    git checkout 92dea42fc70bfcb52e6d98c4e6854872badfe621
+COPY patches /selkies-src/patches
+RUN cd /selkies-src && \
+    for p in patches/*.patch; do [ -f "$p" ] && patch -p1 < "$p"; done && \
+    cd /selkies-src/addons/selkies-web-core && \
+    npm install && \
+    npm run build && \
+    cd /selkies-src/addons/selkies-dashboard && \
+    npm install && \
+    npm run build && \
+    rm -rf /selkies-src/.git /selkies-src/patches
+
 FROM debian:trixie-slim
 
-# Prevent interactive prompts during package installation
+LABEL maintainer="shoy" \
+      description="Brave Origin Native Wayland Appliance with Selkies, Pixelflux, and Labwc" \
+      version="1.93.136"
+
 ENV DEBIAN_FRONTEND=noninteractive \
-    LANG=en_US.UTF-8 \
-    LC_ALL=C.UTF-8 \
-    DISPLAY=:1 \
-    HOME=/config
+    PUID=1000 \
+    PGID=1000 \
+    UMASK=022 \
+    TZ=Etc/UTC \
+    AUTO_UPDATE=true \
+    ENABLE_AUDIO=true \
+    AUTH_ENABLED=false \
+    PIXELFLUX_WAYLAND=true \
+    SELKIES_ENABLE_BASIC_AUTH=false \
+    SELKIES_ENABLE_DUAL_MODE=false \
+    SELKIES_PORT=8082 \
+    CUSTOM_WS_PORT=8082 \
+    SELKIES_ADDR=127.0.0.1 \
+    XDG_RUNTIME_DIR=/tmp/runtime-braveuser \
+    WAYLAND_DISPLAY=wayland-1 \
+    PULSE_SERVER=unix:/tmp/runtime-braveuser/pulse/native
 
-# Build arguments
-ARG BRAVE_ORIGIN_VERSION=""
-ARG KASMVNC_VERSION="1.5.0"
+# 1. Add Official Brave Origin Apt Repository (Release Channel)
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gnupg && \
+    install -m 0755 -d /etc/apt/keyrings && \
+    curl -fsSL https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg \
+    -o /etc/apt/keyrings/brave-browser-archive-keyring.gpg && \
+    chmod 644 /etc/apt/keyrings/brave-browser-archive-keyring.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/brave-browser-archive-keyring.gpg arch=amd64] https://brave-browser-apt-release.s3.brave.com/ stable main" \
+    > /etc/apt/sources.list.d/brave-browser-release.list && \
+    rm -rf /var/lib/apt/lists/*
 
-# 1. Install prerequisites, desktop dependencies, and fonts
-RUN set -eux; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl \
-        gnupg \
-        gosu \
-        tini \
-        procps \
-        openssl \
-        ssl-cert \
-        xdg-utils \
-        openbox \
-        nginx-light \
-        dbus-x11 \
-        pulseaudio \
-        pulseaudio-utils \
-        libasound2 \
-        libasound2-plugins \
-        fonts-liberation \
-        fonts-dejavu-core \
-        fonts-noto-color-emoji \
-        xauth \
-        xclip \
-        x11-utils \
-        x11-xkb-utils \
-        xkb-data \
-        libswitch-perl \
-        libyaml-tiny-perl \
-        libhash-merge-simple-perl \
-        libdatetime-perl \
-        libdatetime-timezone-perl \
-        libtry-tiny-perl \
-    ; \
-    # 2. Add official Brave APT repository
-    curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg \
-        https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg; \
-    curl -fsSLo /etc/apt/sources.list.d/brave-browser-release.sources \
-        https://brave-browser-apt-release.s3.brave.com/brave-browser.sources; \
-    apt-get update; \
-    if [ -n "${BRAVE_ORIGIN_VERSION}" ] && [ "${BRAVE_ORIGIN_VERSION}" != "latest" ]; then \
-        apt-get install -y --no-install-recommends "brave-origin=${BRAVE_ORIGIN_VERSION}"; \
-    else \
-        apt-get install -y --no-install-recommends brave-origin; \
-    fi; \
-    if [ -f /opt/brave.com/brave-origin/chrome-sandbox ]; then \
-        chown root:root /opt/brave.com/brave-origin/chrome-sandbox; \
-        chmod 4755 /opt/brave.com/brave-origin/chrome-sandbox; \
-    fi; \
-    if [ -f /opt/brave.com/brave-origin/apparmor.d/brave-origin-stable ]; then \
-        mkdir -p /etc/apparmor.d; \
-        cp /opt/brave.com/brave-origin/apparmor.d/brave-origin-stable /etc/apparmor.d/brave-origin; \
-    fi; \
-    # 3. Download, validate, and install verified official KasmVNC release asset for Debian Trixie
-    ARCH="$(dpkg --print-architecture)"; \
-    KASMVNC_DEB="kasmvncserver_trixie_${KASMVNC_VERSION}_${ARCH}.deb"; \
-    KASMVNC_URL="https://github.com/kasmtech/KasmVNC/releases/download/v${KASMVNC_VERSION}/${KASMVNC_DEB}"; \
-    echo "Downloading verified KasmVNC release asset from: ${KASMVNC_URL}"; \
-    if ! curl -fsSL -o /tmp/kasmvnc.deb "${KASMVNC_URL}"; then \
-        echo "ERROR: Failed to download official KasmVNC release asset '${KASMVNC_DEB}' for architecture '${ARCH}' from '${KASMVNC_URL}'!" >&2; \
-        exit 1; \
-    fi; \
-    if [ ! -s /tmp/kasmvnc.deb ]; then \
-        echo "ERROR: Downloaded KasmVNC file is empty (0 bytes)!" >&2; \
-        exit 1; \
-    fi; \
-    # Validate package integrity and metadata using dpkg-deb
-    if ! dpkg-deb -I /tmp/kasmvnc.deb >/dev/null 2>&1; then \
-        echo "ERROR: Downloaded file is not a valid Debian package archive!" >&2; \
-        exit 1; \
-    fi; \
-    PKG_NAME="$(dpkg-deb -f /tmp/kasmvnc.deb Package 2>/dev/null || echo "")"; \
-    if [ "${PKG_NAME}" != "kasmvncserver" ]; then \
-        echo "ERROR: Unexpected package name '${PKG_NAME}' (expected 'kasmvncserver')!" >&2; \
-        exit 1; \
-    fi; \
-    PKG_VER="$(dpkg-deb -f /tmp/kasmvnc.deb Version 2>/dev/null || echo "")"; \
-    case "${PKG_VER}" in \
-        "${KASMVNC_VERSION}"*) ;; \
-        *) \
-            echo "ERROR: Package version '${PKG_VER}' does not match expected version '${KASMVNC_VERSION}'!" >&2; \
-            exit 1; \
-            ;; \
-    esac; \
-    PKG_ARCH="$(dpkg-deb -f /tmp/kasmvnc.deb Architecture 2>/dev/null || echo "")"; \
-    if [ "${PKG_ARCH}" != "${ARCH}" ]; then \
-        echo "ERROR: Package architecture '${PKG_ARCH}' does not match target architecture '${ARCH}'!" >&2; \
-        exit 1; \
-    fi; \
-    echo "Successfully validated Debian package: ${PKG_NAME} (${PKG_VER}) [${PKG_ARCH}]"; \
-    apt-get install -y --no-install-recommends /tmp/kasmvnc.deb; \
-    rm -f /tmp/kasmvnc.deb; \
-    # 4. Strict Build-Time Package Verification
-    dpkg-query -W -f='${Package} ${Version}\n' brave-origin; \
-    if dpkg -s brave-browser 2>/dev/null || dpkg -s brave-browser-beta 2>/dev/null || dpkg -s brave-browser-nightly 2>/dev/null || dpkg -s brave-browser-dev 2>/dev/null; then \
-        echo "ERROR: Standard Brave Browser packages detected in image build!" >&2; \
-        exit 1; \
-    fi; \
-    echo "========================================================"; \
-    echo " Build Verification Summary:"; \
-    echo " Base OS: Debian 13 Trixie Slim"; \
-    echo " Browser package: $(dpkg-query -W -f='${Package} (${Version})' brave-origin)"; \
-    echo " Browser channel/product: Brave Origin Release"; \
-    echo " Standard Brave Browser installed: No"; \
-    echo " KasmVNC installed: Yes (${PKG_NAME} ${PKG_VER} [${PKG_ARCH}])"; \
-    echo " Persistent directory: /config"; \
-    echo "========================================================"; \
-    # 5. Clean APT caches to minimize final image size
-    apt-get purge -y --auto-remove gnupg; \
-    apt-get clean; \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+# 2. Base Utilities, Wayland Compositor, Audio, Graphics, Python & Brave Origin
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    procps \
+    iproute2 \
+    openssl \
+    nginx \
+    apache2-utils \
+    pulseaudio \
+    pulseaudio-utils \
+    dbus \
+    labwc \
+    libwlroots-0.18 \
+    wtype \
+    wl-clipboard \
+    wayland-protocols \
+    libwayland-client0 \
+    libwayland-server0 \
+    libwayland-cursor0 \
+    libwayland-egl1 \
+    libdrm2 \
+    libdrm-intel1 \
+    libdrm-amdgpu1 \
+    libdrm-radeon1 \
+    libdrm-nouveau2 \
+    libgbm1 \
+    libpixman-1-0 \
+    libcairo2 \
+    libcairo-gobject2 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libgl1-mesa-dri \
+    libglx-mesa0 \
+    libegl1 \
+    libgles2 \
+    mesa-vulkan-drivers \
+    mesa-va-drivers \
+    intel-media-va-driver \
+    libva2 \
+    libva-drm2 \
+    libva-wayland2 \
+    python3 \
+    python3-pip \
+    python3-pil \
+    python3-websockets \
+    python3-aiohttp \
+    python3-aiofiles \
+    python3-msgpack \
+    fonts-liberation \
+    fonts-dejavu-core \
+    fonts-noto-color-emoji \
+    xdg-utils \
+    desktop-file-utils \
+    shared-mime-info \
+    hicolor-icon-theme \
+    libnss3 \
+    libatk1.0-0t64 \
+    libatk-bridge2.0-0t64 \
+    libcups2t64 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libasound2t64 \
+    cron \
+    brave-origin \
+    && rm -rf /var/lib/apt/lists/*
 
-# Configure Openbox minimal window management defaults (auto-maximize browser, no terminal menu)
-RUN set -eux; \
-    mkdir -p /etc/xdg/openbox; \
-    cat <<'EOF' > /etc/xdg/openbox/rc.xml
-<?xml version="1.0" encoding="UTF-8"?>
-<openbox_config xmlns="http://openbox.org/3.4/rc">
-  <applications>
-    <application class="*">
-      <maximized>yes</maximized>
-      <decor>no</decor>
-      <focus>yes</focus>
-    </application>
-  </applications>
-  <margins>
-    <top>0</top>
-    <bottom>0</bottom>
-    <left>0</left>
-    <right>0</right>
-  </margins>
-  <resistance>
-    <strength>10</strength>
-    <screen_edge_strength>20</screen_edge_strength>
-  </resistance>
-  <focus>
-    <focusNew>yes</focusNew>
-    <followMouse>no</followMouse>
-  </focus>
-</openbox_config>
-EOF
+# 3. Ingest Pinned Upstream Pixelflux and pcmflux from LinuxServer, and Selkies Backend + Dashboard from 92dea42f
+COPY --from=selkies-upstream /lsiopy/lib/python3.13/site-packages/ /usr/local/lib/python3.13/dist-packages/
+COPY --from=selkies-upstream /usr/bin/selkies-desktop /usr/local/bin/selkies-desktop
+COPY --from=selkies-upstream /usr/bin/wtype /usr/local/bin/wtype
+# Install matching Selkies Python backend and web dashboard built at 92dea42f
+COPY --from=selkies-build /selkies-src /tmp/selkies-src
+RUN pip install --no-deps /tmp/selkies-src --break-system-packages && \
+    mkdir -p /usr/share/selkies/web && \
+    cp -r /tmp/selkies-src/addons/selkies-dashboard/dist/* /usr/share/selkies/web/ && \
+    rm -rf /tmp/selkies-src /root/.cache
 
-# Setup standard user, group, and persistent mount points
-RUN set -eux; \
-    groupadd -g 1000 braveuser; \
-    useradd -u 1000 -g braveuser -G ssl-cert -d /config -s /bin/bash -m braveuser; \
-    mkdir -p /config/profile \
-             /config/downloads \
-             /config/kasmvnc/certs \
-             /config/state \
-             /tmp/brave-cache \
-             /tmp/.X11-unix \
-             /tmp/runtime-braveuser \
-             /run/lock; \
-    chmod 1777 /tmp/.X11-unix /run/lock; \
-    chmod 700 /tmp/runtime-braveuser /tmp/brave-cache; \
+# 4. Create Unprivileged Non-Root User (braveuser)
+RUN groupadd -r render 2>/dev/null || true && \
+    groupadd -g 1000 braveuser && \
+    useradd -u 1000 -g braveuser -G audio,video,render -m -s /bin/bash braveuser && \
+    mkdir -p /config /tmp/runtime-braveuser /tmp/brave-cache /etc/nginx/ssl /usr/share/selkies/web && \
+    chmod 700 /tmp/runtime-braveuser && \
     chown -R braveuser:braveuser /config /tmp/runtime-braveuser /tmp/brave-cache
 
-# Copy configuration and scripts
-COPY config/kasmvnc.yaml /etc/kasmvnc/kasmvnc.yaml
+# 5. Copy Configuration and Session Scripts
 COPY config/nginx.conf /etc/nginx/nginx.conf
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY scripts/start-session.sh /usr/local/bin/start-session.sh
 COPY scripts/update-brave.sh /usr/local/bin/update-brave.sh
 COPY scripts/profile-control.sh /usr/local/bin/profile-control.sh
 COPY scripts/reset-password.sh /usr/local/bin/reset-password.sh
-COPY scripts/audio-server.py /usr/local/bin/audio-server.py
-COPY config/audio-client.js /etc/kasmvnc/audio-client.js
 
 ARG BUILD_COMMIT=dev
 RUN echo "${BUILD_COMMIT}" > /etc/brave-origin-build
@@ -189,40 +155,9 @@ RUN chmod +x /usr/local/bin/entrypoint.sh \
              /usr/local/bin/start-session.sh \
              /usr/local/bin/update-brave.sh \
              /usr/local/bin/profile-control.sh \
-             /usr/local/bin/reset-password.sh \
-             /usr/local/bin/audio-server.py
+             /usr/local/bin/reset-password.sh
 
-# Default environment configuration
-ENV PUID=1000 \
-    PGID=1000 \
-    UMASK=022 \
-    TZ=UTC \
-    WEB_PORT=8443 \
-    DISPLAY_WIDTH=1920 \
-    DISPLAY_HEIGHT=1080 \
-    KASM_AUTH_ENABLED=false \
-    KASM_USER=brave \
-    KASM_PASSWORD="" \
-    KASM_PASSWORD_FILE="" \
-    AUTO_UPDATE=true \
-    UPDATE_INTERVAL=21600 \
-    DOWNGRADE_RETRY_INTERVAL=300 \
-    MIN_UPDATE_FREE_SPACE_MB=1024 \
-    BRAVE_STARTUP_TIMEOUT=15 \
-    BRAVE_ORIGIN_VERSION=latest \
-    ENABLE_GPU=true \
-    ENABLE_AUDIO=true \
-    DRI_NODE=/dev/dri/renderD128 \
-    BRAVE_FLAGS=""
-
-# Persistent browser profile, downloads, and Kasm configuration volume
 VOLUME ["/config"]
-
-# Expose KasmVNC Single-Origin HTTPS Web Client Port
 EXPOSE 8443
 
-# Health check to validate KasmVNC HTTPS responsiveness
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -k -fsS "https://127.0.0.1:${WEB_PORT:-8443}/" >/dev/null 2>&1 || exit 1
-
-ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

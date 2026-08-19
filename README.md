@@ -1,27 +1,39 @@
-# Brave Origin in Docker (KasmVNC Web Access)
+# Brave Origin in Docker (Native Wayland / Selkies Web Access)
 
-A production-grade, lightweight Docker solution for **Brave Origin** built on **Debian 13 Trixie Slim** and accessed remotely from any modern web browser via **KasmVNC** over HTTPS. Designed for normal Unraid Docker deployment and compatible with standard Unraid appdata/PUID/PGID/device mapping conventions, storage-agnostic persistence, atomic profile state tracking, application-level profile locking, safe backup quiescing, application watchdog crash backoff, unprivileged execution, preserved Chromium sandboxing, and two-stage transaction-safe browser updates.
+A production-grade, lightweight Docker appliance for **Brave Origin** built on **Debian 13 Trixie Slim** and accessed remotely from any modern web browser via **Native Wayland / Selkies** over HTTPS. Designed for normal Unraid Docker deployment and standard Linux hosts, featuring native Chromium Ozone Wayland rendering, VAAPI hardware acceleration, atomic profile state tracking, application-level profile locking, safe backup quiescing, unprivileged execution, preserved Chromium sandboxing, and two-stage transaction-safe browser updates.
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│ Client Device (Chrome / Brave / Firefox / Safari / Mobile)  │
+│ Client Device (Firefox / Chrome / Safari / Edge / Mobile)   │
 └──────────────────────────────┬──────────────────────────────┘
                                │
-                               │ HTTPS (Port 8443)
+                               │ HTTPS / WSS (Port 8443)
                                ▼
 ┌─────────────────────────────────────────────────────────────┐
 │ Docker Container (Debian 13 Trixie Slim)                    │
 │                                                             │
 │ ┌─────────────────────────────────────────────────────────┐ │
-│ │ KasmVNC Server (WebSockets + H.264/WebP/JPEG + TLS)     │ │
+│ │ Nginx TLS Ingress Proxy (Single-Origin Port 8443)       │ │
+│ └────────────────────────────┬────────────────────────────┘ │
+│                              │ Proxy to 127.0.0.1:8082      │
+│                              ▼                              │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ Selkies Streaming Server + Dashboard (WebSockets)       │ │
+│ ├────────────────────────────┬────────────────────────────┤ │
+│ │ Pixelflux (VAAPI H.264)    │ pcmflux (Opus Audio)       │ │
+│ └────────────────────────────┴────────────────────────────┘ │
+│                              │                              │
+│ ┌────────────────────────────▼────────────────────────────┐ │
+│ │ Smithay Root Compositor (wayland-1)                     │ │
 │ └────────────────────────────┬────────────────────────────┘ │
 │                              ▼                              │
 │ ┌─────────────────────────────────────────────────────────┐ │
-│ │ Openbox Window Manager (Auto-Maximize + Focus)          │ │
+│ │ Labwc Application Window Manager (wayland-0)            │ │
 │ └────────────────────────────┬────────────────────────────┘ │
 │                              ▼                              │
 │ ┌─────────────────────────────────────────────────────────┐ │
 │ │ Official Brave Origin Browser (brave-origin)            │ │
+│ │ Running Natively on Ozone Wayland (No Xwayland)         │ │
 │ └───────────────┬─────────────────────────┬───────────────┘ │
 │                 │                         │                 │
 │                 ▼                         ▼                 │
@@ -44,25 +56,33 @@ A production-grade, lightweight Docker solution for **Brave Origin** built on **
 
 ## Features
 
+- **Native Wayland & Ozone**: Pure Wayland architecture running without X11 or Xwayland overhead. Brave Origin connects directly to Labwc/Smithay using native Ozone.
+- **Zero Xwayland Overhead**: No X11 libraries, Xwayland processes, or legacy VNC servers run in the appliance.
 - **Official Brave Origin Only**: Installed exclusively from Brave's official APT repository (`brave-origin` package). Build verification strictly prohibits standard Brave packages (`brave-browser`).
 - **Debian 13 Trixie Slim Base**: Minimal footprint without unnecessary desktop environments, terminals, or background daemons.
-- **Application Watchdog with Bounded Backoff**: Automatically relaunches Brave Origin if the browser window is closed or crashes during normal `RUNNING` state, with bounded backoff (10s -> 30s -> 60s -> `ERROR` state) to prevent infinite restart loops.
-- **Fast Startup & Optimized Ownership**: Verifies `PUID`/`PGID` ownership instantly without performing slow recursive `chown -R` scans across large profile databases on every restart.
-- **Secrets from Files Support**: Supports `KASM_PASSWORD_FILE` (pointing to mounted Docker secret files or host paths) in addition to direct `KASM_PASSWORD` environment variables.
-- **Configurable UMASK**: Supports `UMASK=022` for predictable persistent file permissions on Unraid and Linux hosts.
-- **Storage-Agnostic `/config`**: Runs cleanly on any local storage mount (including Unraid user shares, ZFS datasets, Btrfs subvolumes, LVM, ext4, or XFS). Host path configurable via `CONFIG_PATH`.
+- **Hardware Acceleration**: Automatic Intel/AMD GPU detection via `/dev/dri/renderD128` with VAAPI H.264 zero-copy DMA-BUF capture and encoding. Software rasterization fallback when no GPU is present.
+- **Unified Audio Streaming**: PulseAudio virtual sink with Rust `pcmflux` Opus audio capture streamed synchronously over the WebSocket connection.
+- **Single-Origin TLS (Port 8443)**: Nginx reverse proxy handles TLS termination, static asset delivery, and WebSocket upgrades while Selkies is strictly bound to loopback `127.0.0.1:8082`.
+- **Fast Startup & Optimized Ownership**: Verifies `PUID`/`PGID` ownership instantly without performing slow recursive `chown -R` scans across large profile databases on restart.
 - **Application Profile Locking**: Uses an exclusive kernel `flock` on `/config/state/profile.lock` held for the lifetime of the browser process to prevent concurrent instances on the same profile.
-- **Safe Singleton Recovery**: Removes stale Chromium `SingletonLock` artifacts only after the authoritative `flock` is acquired and no active browser process is running in the container.
+- **Safe Singleton Recovery**: Removes stale Chromium `SingletonLock` artifacts only after the authoritative `flock` is acquired.
 - **Debian-Semantic Downgrade Protection**: Evaluates versions using `dpkg --compare-versions` and prevents launching older binaries against profiles modified by newer versions.
 - **Atomic State Tracking**: Updates `/config/state/last-brave-version` only after a verified successful launch using atomic file replacement with `0600` permissions.
 - **Backup Consistency Hooks**: Includes `profile-control.sh` to cleanly flush profile databases and suspend browser operations during external filesystem backups or snapshots without stopping the container.
 - **Two-Stage Offline Updates**: Pre-downloads package archives in Stage 1 while Brave Origin is running, and installs strictly offline (`--no-download`) in Stage 2 only after downloads succeed.
-- **Conservative Free Space Checks**: Checks root filesystem `/` against `MIN_UPDATE_FREE_SPACE_MB` (default: 1024MB safety floor) independently of `/config` storage.
-- **Stable Hostname**: Preserves container hostname across recreations (`CONTAINER_HOSTNAME=brave-origin`) to avoid Chromium singleton confusion.
-- **Direct HTTPS Web Client**: Powered by KasmVNC 1.5.0 with dynamic resolution resizing, full-screen, high-DPI, and 2-way clipboard sync.
-- **Ephemeral Browser Cache**: Directs disposable browser disk cache to `/tmp/brave-cache` to keep persistent backups compact and reduce disk writes.
 - **Preserved Chromium Sandboxing**: Runs unprivileged (`braveuser`) with full Chromium user-namespace sandboxing enabled under Docker's standard security model (no `--privileged`, no `--no-sandbox`).
-- **Multi-Architecture**: Built for `linux/amd64` and `linux/arm64`.
+
+---
+
+## Known Limitations & Security Notes
+
+> [!WARNING]
+> **Clipboard Status: UNRESOLVED (Intentionally Deferred)**  
+> Seamless bidirectional clipboard synchronization between client browsers and the remote Wayland desktop is currently unresolved and intentionally deferred. Native text clipboard operations (`Ctrl+C` / `Ctrl+V`) across different client browsers are not guaranteed to function reliably in this version. This is a recognized known limitation, not a release claim.
+
+> [!NOTE]
+> **Docker Seccomp Profile**:  
+> Running with `--security-opt seccomp=unconfined` is required on Linux/Unraid hosts because Docker's default seccomp profile filters `clone(CLONE_NEWUSER)` and `unshare(CLONE_NEWUSER)` syscalls inside unprivileged containers. Brave Origin itself continues to execute strictly as an unprivileged user (`braveuser`, UID/GID 1000 or custom PUID/PGID) with full Chromium user-namespace sandboxing active.
 
 ---
 
@@ -70,243 +90,135 @@ A production-grade, lightweight Docker solution for **Brave Origin** built on **
 
 - [Docker](https://docs.docker.com/engine/install/) (v20.10 or later)
 - [Docker Compose](https://docs.docker.com/compose/) (v2.0 or later)
+- GPU Device (Optional): Intel or AMD GPU with `/dev/dri` passed through for hardware acceleration.
 
 ---
 
-## Quick Start
+## Deployment
 
-### 1. Clone or Download Repository
+### Docker Compose (Recommended)
+
+```yaml
+services:
+  brave-origin:
+    image: forgejo.foss.homes/shoy/brave-origin:wayland
+    container_name: brave-origin
+    hostname: brave-origin
+    restart: unless-stopped
+    shm_size: "1gb"
+    security_opt:
+      - seccomp:unconfined
+    devices:
+      - /dev/dri:/dev/dri
+    ports:
+      - "8443:8443"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+      - AUTH_ENABLED=false
+      - AUTO_UPDATE=true
+      - ENABLE_AUDIO=true
+    volumes:
+      - ./appdata:/config
+```
+
+### Docker CLI Run Command
 
 ```bash
-git clone https://github.com/your-username/brave-origin-docker.git
-cd brave-origin-docker
-```
-
-### 2. Configure Environment & Credentials
-
-Copy the example environment file:
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` to configure your storage location, authentication mode, or web port:
-
-#### Option A: Passwordless Access (Default)
-```ini
-CONFIG_PATH=./appdata
-# Example for Unraid OS deployments:
-# CONFIG_PATH=/mnt/user/appdata/brave-origin
-
-WEB_PORT=8443
-KASM_AUTH_ENABLED=false
-```
-
-> [!WARNING]
-> When `KASM_AUTH_ENABLED=false`, anyone who can reach the exposed KasmVNC port can control the browser session. Use this mode on private, trusted local networks.
-
-#### Option B: Authentication Enabled with Environment Password
-```ini
-CONFIG_PATH=./appdata
-WEB_PORT=8443
-KASM_AUTH_ENABLED=true
-KASM_USER=brave
-KASM_PASSWORD=example-password
-```
-
-#### Option C: Authentication Enabled with Mounted Secret (Recommended)
-Storing passwords in a mounted Docker secret file inside the container is preferable to storing plaintext passwords directly in container environment variables or `.env`:
-```ini
-CONFIG_PATH=./appdata
-WEB_PORT=8443
-KASM_AUTH_ENABLED=true
-KASM_USER=brave
-KASM_PASSWORD_FILE=/run/secrets/kasm_password
-```
-
-#### First-Boot Interactive Password Initialization
-If `KASM_AUTH_ENABLED=true` and you prefer not to write passwords in `.env`, initialize credentials interactively before startup:
-```bash
-docker compose run --rm brave-origin /usr/local/bin/reset-password.sh --generate
-```
-This stores the credentials in `/config/kasmvnc/.kasmpasswd` (mode `0600`). You can also run `reset-password.sh` while authentication is disabled without automatically enabling authentication.
-
-### 3. Build & Launch
-
-#### Standard Software-Rendered Mode (Default):
-```bash
-docker compose up -d --build
-```
-
-#### With Optional Intel/AMD GPU Hardware Acceleration (Linux / Unraid):
-```bash
-docker compose -f compose.yaml -f compose.gpu.yaml up -d --build
-```
-
-### 4. Connect via Web Browser
-
-Open your browser and navigate to:
-
-```text
-https://localhost:8443
-```
-
-*(If accessing from another device on your network, use `https://<HOST-IP>:8443`)*
-
-> [!NOTE]
-> Because KasmVNC generates a self-signed TLS certificate by default, your browser will display a certificate warning on first visit. Accept the certificate to proceed. If `KASM_AUTH_ENABLED=true`, enter your `KASM_USER` and password; if `false`, you will connect directly to the browser session.
-
-> [!NOTE]
-> **AppArmor Host Enforcement**: Placing an AppArmor profile in `/etc/apparmor.d` within the container provides the package profile definition, but AppArmor security profile enforcement is strictly evaluated by the host Linux kernel. Containerized applications rely on standard unprivileged user namespaces and host daemon configuration for containment.
-
----
-
-## Technical Comparison: KasmVNC vs. Selkies
-
-| Evaluation Metric | Current Implementation (KasmVNC + Openbox) | Reference Project (Selkies + Wayland + Labwc) |
-| :--- | :--- | :--- |
-| **Primary Protocol** | WebSocket + Tile-based Adaptive Video/JPEG/WebP | WebRTC / GStreamer H.264/VP9/AV1 Video Stream |
-| **Workload Optimization** | **Static text clarity**, subpixel rendering, web reading | **High-motion workloads**, cloud gaming, 3D graphics |
-| **Dependencies & Footprint** | KasmVNC has fewer remote-desktop framework dependencies | Requires custom patched `wlroots`, `dind`, Python venvs |
-| **Security & UI Surface** | **Hardened browser-only**; no terminal, no sudo, no desktop menu | Exposes root `sudo`, `xterm`, `foot`, `proot-apps`, desktop menus |
-| **Chromium Sandboxing** | **Fully Enabled** (Unprivileged Chromium User Namespaces) | Disabled in reference (`--no-sandbox`, `--test-type`) |
-| **Browser Compatibility** | Works across all modern desktop & mobile browsers over HTTPS/WSS | Requires WebRTC ICE/STUN/TURN network negotiation |
-| **Potential Advantages** | Low idle CPU, sharp text, native Debian Trixie `.deb` package | Potential zero-copy GPU video streaming & lower motion latency |
-
-**Architecture Decision**: KasmVNC remains the preferred implementation for the current project because it is already integrated, preserves the project's security model, and avoids a major architecture migration before baseline testing. Selkies + Wayland may be re-evaluated for zero-copy GPU workloads after actual performance testing if a minimal headless build with preserved Chromium sandboxing becomes viable.
-
----
-
-## Base OS vs. Browser Update Strategy
-
-- **Brave Origin Browser Updates**: Handled automatically in-container by `scripts/update-brave.sh` via a two-stage offline transaction without requiring container restarts or image rebuilds.
-- **Base OS / KasmVNC Updates**: Handled by rebuilding the Docker container image periodically when upstream Debian 13 Trixie or KasmVNC release security patches:
-
-```bash
-# Rebuild image with latest Debian Trixie security patches:
-docker compose build --pull
-docker compose up -d
+docker run -d \
+  --name brave-origin \
+  --restart unless-stopped \
+  --shm-size 1g \
+  --security-opt seccomp=unconfined \
+  --device /dev/dri:/dev/dri \
+  -p 8443:8443 \
+  -e PUID=1000 \
+  -e PGID=1000 \
+  -e TZ=America/New_York \
+  -e AUTH_ENABLED=false \
+  -e AUTO_UPDATE=true \
+  -e ENABLE_AUDIO=true \
+  -v /mnt/user/appdata/brave-origin:/config \
+  forgejo.foss.homes/shoy/brave-origin:wayland
 ```
 
 ---
 
-## Sensitive Storage & Backup Warning
+## Persistent Storage (`/config`) Layout
 
-> [!CAUTION]
-> The `/config` persistent directory contains sensitive personal and credential material, including:
-> - Browser history, bookmarks, and cookies
-> - Active login sessions and authentication tokens
-> - Saved passwords and autofill data
-> - Brave Sync configuration and encryption seeds
-> - KasmVNC authentication credentials (`/config/kasmvnc/.kasmpasswd`)
-> - TLS private keys (`/config/kasmvnc/certs/kasmvnc.key`)
->
-> **Note on KasmVNC credentials**: `/config/kasmvnc/.kasmpasswd` uses an obfuscated representation (mode `0600`), not a cryptographically salted one-way hash.
-> 
-> All backups, archives, and storage snapshots containing `/config` must be stored on encrypted volumes and protected with appropriate access controls.
+| Path | Purpose |
+|---|---|
+| `/config/profile/` | Persistent Brave Origin user profile (bookmarks, history, extensions, preferences). |
+| `/config/downloads/` | Default browser download directory. |
+| `/config/state/` | Runtime state tracking (`profile.lock`, `last-brave-version`, `status`, logs). |
+| `/config/ssl/` | Generated or user-provided SSL/TLS certificates (`cert.pem`, `cert.key`). |
+| `/config/.passwd` | HTTP Basic Authentication credentials (when `AUTH_ENABLED=true`). |
 
 ---
 
-## Persistent Storage Layout
+## Environment Variables & Authentication Precedence
 
-```text
-/config/
-├── profile/             # Complete Chromium user profile (history, bookmarks, cookies, extensions, databases)
-├── downloads/           # Downloaded files destination
-├── kasmvnc/             # KasmVNC server configuration and authentication
-│   ├── kasmvnc.yaml
-│   ├── .kasmpasswd      # Obfuscated credentials file (mode 0600, sensitive)
-│   └── certs/
-│       ├── kasmvnc.pem  # TLS certificate chain
-│       └── kasmvnc.key  # TLS private key (mode 0600, sensitive)
-└── state/               # Internal application state (snapshot-friendly)
-    ├── profile.lock     # Authoritative flock for profile concurrency control
-    ├── last-brave-version # Atomically written version of most recent successful launch
-    └── status           # Current status: RUNNING, UPDATING, DOWNGRADE_RECOVERY, QUIESCED
-```
+| Variable | Default | Purpose |
+|---|---|---|
+| `PUID` | `1000` | User ID for container process execution and file permissions. |
+| `PGID` | `1000` | Group ID for container process execution and file permissions. |
+| `UMASK` | `022` | File creation permission mask for downloads and config files. |
+| `TZ` | `Etc/UTC` | Timezone setting for container logs and browser clock. |
+| `AUTH_ENABLED` | `false` | Enable HTTP Basic Authentication on ingress port 8443 (supports legacy `KASM_AUTH_ENABLED`). |
+| `AUTH_USER` | `brave` | Username when `AUTH_ENABLED=true` (supports legacy `KASM_USER`). |
+| `AUTH_PASSWORD` | *(empty)* | Initial plaintext password when `AUTH_ENABLED=true` (supports legacy `KASM_PASSWORD`). |
+| `AUTH_PASSWORD_FILE`| *(empty)* | Path to mounted secret file containing password (supports legacy `KASM_PASSWORD_FILE`). Preferred for secrets. |
+| `ENABLE_AUDIO` | `true` | Enable PulseAudio virtual sink and WebSocket Opus streaming. |
+| `AUTO_UPDATE` | `true` | Enable automated two-stage offline updates for Brave Origin. |
+| `UPDATE_INTERVAL` | `21600` | Update verification interval in seconds (default: 6 hours). |
+| `MIN_UPDATE_FREE_SPACE_MB`| `1024` | Minimum free disk space on root filesystem required to initiate an update. |
 
-Disposable browser cache is stored in `/tmp/brave-cache` in container ephemeral memory/storage, ensuring `/config` remains clean and snapshot-friendly.
+### Canonical Authentication Precedence
+
+When `AUTH_ENABLED=true` (or `KASM_AUTH_ENABLED=true`):
+
+1. **Existing `/config/.passwd` (Highest Precedence)**: If a persistent credentials file exists on disk (e.g. generated on first boot or configured via `reset-password.sh`), it takes precedence and is never overwritten by container restarts.
+2. **`AUTH_PASSWORD_FILE` / `KASM_PASSWORD_FILE`**: If `/config/.passwd` does not exist, the initial password is read from the mounted Docker secret file. **(Recommended for secrets)**.
+3. **`AUTH_PASSWORD` / `KASM_PASSWORD`**: If no secret file is specified, the initial password is read from the environment variable.
+4. **Interactive Utility**: Use `/usr/local/bin/reset-password.sh` to update or regenerate credentials at any time.
 
 ---
 
-## Credentials Management
+## Password Management
 
-### Resetting Password
-To reset or change credentials at any time, run:
+To change or generate authentication credentials on a running container:
 
 ```bash
-# Set a specific new password:
-docker compose exec brave-origin /usr/local/bin/reset-password.sh "MyNewPassword123!"
+# Set a specific password:
+docker exec brave-origin /usr/local/bin/reset-password.sh "YourNewPassword123!"
 
-# Or generate a new random password:
-docker compose exec brave-origin /usr/local/bin/reset-password.sh --generate
+# Generate a random secure password:
+docker exec brave-origin /usr/local/bin/reset-password.sh --generate
 ```
 
 ---
 
-## Backup Consistency Hooks
+## Backup Consistency Hooks (`profile-control.sh`)
 
-For point-in-time consistent backups and external snapshots (such as ZFS, Btrfs, LVM, or Unraid backup scripts), use `profile-control.sh`:
+For consistent snapshots or appdata backups without stopping the container:
 
 ```bash
-# 1. Quiesce profile (flushes SQLite databases, stops Brave Origin, and synchronizes filesystem):
-docker compose exec brave-origin /usr/local/bin/profile-control.sh quiesce
+# Pre-backup: flush SQLite databases and suspend browser
+docker exec brave-origin /usr/local/bin/profile-control.sh quiesce
 
-# 2. Perform external snapshot or cold backup:
-# e.g., tar -czvf brave-origin-backup.tar.gz ./appdata
-# or zfs snapshot pool/appdata/brave-origin@backup_$(date +%Y%m%d)
+# (Perform your backup / snapshot of /config here)
 
-# 3. Resume browser operations:
-docker compose exec brave-origin /usr/local/bin/profile-control.sh resume
+# Post-backup: resume normal browser operations
+docker exec brave-origin /usr/local/bin/profile-control.sh resume
 ```
 
-To query the current state of the browser container:
+To query container state:
+
 ```bash
-docker compose exec brave-origin /usr/local/bin/profile-control.sh status
-# Returns: RUNNING, UPDATING, DOWNGRADE_RECOVERY, QUIESCED, STARTING, or ERROR
+docker exec brave-origin /usr/local/bin/profile-control.sh status
+# Returns: RUNNING, UPDATING, QUIESCED, STARTING, or ERROR
 ```
-
----
-
-## Profile Downgrade Protection & Recovery
-
-Chromium profiles undergo irreversible database migrations (SQLite schemas, LevelDB keys, IndexedDB) when newer versions run. Launching an older version of Brave Origin against an upgraded profile will corrupt extensions, history, and preferences.
-
-### How Protection Works:
-1. **Debian Comparison Semantics**: All checks evaluate version compatibility using `dpkg --compare-versions "$INSTALLED" ge "$LAST_RECORDED"`.
-2. **Atomic Version Tracking**: Whenever Brave Origin launches successfully, its version is written to `/config/state/last-brave-version.tmp.$$` and atomically moved to `/config/state/last-brave-version` with `0600` permissions after a stabilization verification period (`BRAVE_STARTUP_TIMEOUT=15`).
-3. **Downgrade Blocking**: If an older container image is deployed or the repository is temporarily unreachable while the installed version is older than `/config/state/last-brave-version`, Brave Origin launch is **paused**.
-4. **Automatic Downgrade Recovery**: KasmVNC remains accessible while the supervisor enters recovery mode, retrying the official repository every `DOWNGRADE_RETRY_INTERVAL` (default: 300s / 5 minutes). Once a compatible version is installed, Brave Origin immediately launches and exits recovery mode.
-
----
-
-## Environment Variables
-
-| Variable | Default | Description |
-| :--- | :--- | :--- |
-| `CONFIG_PATH` | `./appdata` | Host persistent directory path (supports local folders or `/mnt/user/appdata/brave-origin`) |
-| `CONTAINER_HOSTNAME` | `brave-origin` | Stable container hostname to prevent singleton identity churn |
-| `WEB_PORT` | `8443` | Host port mapped to KasmVNC HTTPS interface |
-| `KASM_AUTH_ENABLED` | `false` | Enable HTTP Basic Auth login prompt (`false` for passwordless access) |
-| `KASM_USER` | `brave` | Username for KasmVNC login when `KASM_AUTH_ENABLED=true` |
-| `KASM_PASSWORD` | `""` | Password for KasmVNC login when `KASM_AUTH_ENABLED=true` |
-| `KASM_PASSWORD_FILE` | `""` | Path to container-mounted secret file containing login password |
-| `PUID` | `1000` | Host User ID mapped to container user (`99` for Unraid, `1000` for standard Linux) |
-| `PGID` | `1000` | Host Group ID mapped to container user (`100` for Unraid, `1000` for standard Linux) |
-| `UMASK` | `022` | File creation mask for persistent files |
-| `TZ` | `America/New_York` | Container timezone |
-| `DISPLAY_WIDTH` | `1920` | Initial virtual desktop width in pixels |
-| `DISPLAY_HEIGHT` | `1080` | Initial virtual desktop height in pixels |
-| `AUTO_UPDATE` | `true` | Enable in-container automatic Brave Origin updates |
-| `UPDATE_INTERVAL` | `21600` | Periodic update check interval in seconds (21600 = 6 hours) |
-| `DOWNGRADE_RETRY_INTERVAL` | `300` | Recovery retry interval when launch is paused (300 = 5 minutes) |
-| `MIN_UPDATE_FREE_SPACE_MB` | `1024` | Minimum free space in MB on root `/` required to start update |
-| `BRAVE_STARTUP_TIMEOUT` | `15` | Browser startup stabilization timeout in seconds |
-| `BRAVE_ORIGIN_VERSION`| `latest` | Pin a specific package version (e.g. `1.93.136`) or use `latest` |
-| `ENABLE_GPU` | `true` | Enable GPU hardware acceleration if supported and `/dev/dri` is passed |
-| `ENABLE_AUDIO` | `true` | Enable PulseAudio virtual device and Single-Origin Secure Audio streaming via `/audio` |
-| `DRI_NODE` | `/dev/dri/renderD128` | Direct Rendering Infrastructure node for hardware acceleration |
-| `BRAVE_FLAGS` | `""` | Extra CLI flags passed to Brave Origin (e.g. `"--incognito"`) |
 
 ---
 
@@ -316,92 +228,43 @@ Brave Origin updates automatically inside the container without rebuilding the D
 
 1. **Space Pre-Check**: Verifies that root partition `/` has at least `MIN_UPDATE_FREE_SPACE_MB` (default: 1024MB) available before downloading packages.
 2. **Stage 1 (Pre-Download)**: Downloads package archives into local cache while Brave Origin remains running online. If network/download fails, the browser is untouched.
-3. **Stage 2 (Offline Install)**: Stops Brave Origin to flush databases, installs strictly from local cache using `--no-download`, and relaunches the upgraded binary without dropping your remote KasmVNC session.
-4. **Lock Coordination**: All update modes share `/run/lock/brave-origin-update.lock` using non-blocking `flock`.
+3. **Stage 2 (Offline Install)**: Stops Brave Origin to flush databases, installs strictly from local cache using `--no-download`, and relaunches the upgraded binary without dropping your remote session.
+4. **Lock Coordination**: All update modes share `/config/state/profile.lock` and update locks using non-blocking `flock`.
 
 ### Triggering a Manual Update Check
 
 ```bash
-docker compose exec brave-origin /usr/local/bin/update-brave.sh
+docker exec brave-origin /usr/local/bin/update-brave.sh
 ```
 
 ---
 
 ## Custom SSL / TLS Certificates
 
-If you own a custom SSL certificate (e.g. from Let's Encrypt), place your PEM-formatted certificate and private key in `./appdata/kasmvnc/certs/`:
+To use custom SSL/TLS certificates (e.g. from Let's Encrypt), place your PEM-formatted certificate and private key in `/config/ssl/`:
 
-- `./appdata/kasmvnc/certs/kasmvnc.pem` (Certificate chain)
-- `./appdata/kasmvnc/certs/kasmvnc.key` (Private key)
+- `/config/ssl/cert.pem` (Certificate chain)
+- `/config/ssl/cert.key` (Private key)
 
-Restart the container with `docker compose restart`.
+Restart the container or reload Nginx with `docker exec brave-origin nginx -s reload`.
 
 ---
 
 ## GPU Acceleration & Rendering Options
 
-### Software Rendering (Default)
-By default, the container operates with CPU software rendering without requiring host GPU device nodes. This is suitable for Docker Desktop (Windows/macOS) and headless servers.
+### Software Rendering (Default Fallback)
+When `/dev/dri` is not mounted, the container automatically selects the `Pixman` software rasterizer and OpenH264 encoder with `--disable-gpu --disable-gpu-compositing`.
 
 ### Intel / AMD Graphics Passthrough (Linux / Unraid)
-On Linux or Unraid systems with `/dev/dri` available, pass the GPU device using `compose.gpu.yaml`:
+On Linux or Unraid hosts with `/dev/dri` available, pass the GPU device using `compose.gpu.yaml` or `--device /dev/dri:/dev/dri` to enable zero-copy DMA-BUF VAAPI H.264 encoding:
 
 ```bash
 docker compose -f compose.yaml -f compose.gpu.yaml up -d
-```
-
-### NVIDIA Graphics
-NVIDIA container GPU acceleration is currently unvalidated/future work for this image. Do not run in privileged mode or weaken sandboxing to attempt NVIDIA injection.
-
----
-
-## Troubleshooting
-
-### Browser tab crashes / Out of memory
-Chromium browsers require adequate shared memory (`/dev/shm`). `compose.yaml` is pre-configured with `shm_size: "1gb"`. Increase to `"2gb"` if running dozens of heavy media tabs.
-
-### Profile Downgrade Warning in Logs
-If the log shows `[DOWNGRADE BLOCKED] Profile Protection Active`, the profile was previously opened by a newer version of Brave Origin than what is currently installed. The container enters recovery mode and will automatically update `brave-origin` to a compatible version once repository access is restored.
-
-### Viewing Live Logs
-```bash
-docker compose logs -f brave-origin
-```
-
----
-
-## Repository Structure
-
-```text
-brave-origin-docker/
-├── Dockerfile
-├── compose.yaml
-├── compose.gpu.yaml
-├── .env.example
-├── .dockerignore
-├── .gitignore
-├── entrypoint.sh
-├── README.md
-├── AGENTS.md
-├── CLAUDE.md
-├── config/
-│   ├── audio-client.js
-│   ├── kasmvnc.yaml
-│   └── nginx.conf
-├── scripts/
-│   ├── audio-server.py
-│   ├── profile-control.sh
-│   ├── reset-password.sh
-│   ├── start-session.sh
-│   └── update-brave.sh
-└── skills/
-    ├── file-upload/
-    ├── frontend-design/
-    └── html-communication/
 ```
 
 ---
 
 ## License
 
-This Docker deployment is provided under the [MIT License](LICENSE). Brave Origin and the Brave logo are trademarks of Brave Software, Inc. KasmVNC is an open-source project by Kasm Technologies.
+This Docker deployment is provided under the [MIT License](LICENSE). Brave Origin and the Brave logo are trademarks of Brave Software, Inc. Selkies is an open-source project by the Selkies Project contributors.
+

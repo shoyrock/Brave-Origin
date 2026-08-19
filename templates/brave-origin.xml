@@ -1,13 +1,13 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>Brave-Origin</Name>
-  <Repository>forgejo.foss.homes/shoy/brave-origin:latest</Repository>
+  <Repository>forgejo.foss.homes/shoy/brave-origin:wayland</Repository>
   <Registry>https://forgejo.foss.homes/shoy/-/packages/container/brave-origin</Registry>
   <Network>bridge</Network>
   <Privileged>false</Privileged>
   <ExtraParams>--security-opt seccomp=unconfined --shm-size=1g --pids-limit 2048</ExtraParams>
 
-  <Overview>Production-grade Brave Origin browser container running on Debian 13 Trixie Slim, accessed remotely via KasmVNC over HTTPS with unprivileged Chromium sandboxing, profile locking, and transaction-safe offline updates.</Overview>
+  <Overview>Production-grade Brave Origin browser container running natively on Debian 13 Trixie Slim with Wayland, Selkies, Pixelflux, and Labwc, accessed remotely over HTTPS with hardware acceleration, profile locking, unprivileged sandboxing, and transaction-safe offline updates.</Overview>
 
   <Project>https://forgejo.foss.homes/shoy/brave-origin</Project>
   <Support>https://forgejo.foss.homes/shoy/brave-origin/issues</Support>
@@ -15,22 +15,22 @@
   <ReadMe>https://forgejo.foss.homes/shoy/brave-origin/raw/branch/main/README.md</ReadMe>
 
   <Category>Productivity: Tools:Utilities</Category>
-  <ExtraSearchTerms>brave browser kasm kasmvnc remote web</ExtraSearchTerms>
+  <ExtraSearchTerms>brave browser wayland selkies remote web ozone</ExtraSearchTerms>
   <WebUI>https://[IP]:[PORT:8443]/</WebUI>
-  <Date>2026-08-18</Date>
+  <Date>2026-08-19</Date>
   <MinVer>6.9</MinVer>
   <License>MIT</License>
 
   <!-- Web Port -->
-  <Config Name="Web HTTPS Port" Target="8443" Default="8443" Mode="tcp" Description="KasmVNC Web HTTPS port for remote browser access." Type="Port" Display="always" Required="true" Mask="false">8443</Config>
+  <Config Name="Web HTTPS Port" Target="8443" Default="8443" Mode="tcp" Description="Single-origin HTTPS web port for remote browser access." Type="Port" Display="always" Required="true" Mask="false">8443</Config>
 
   <!-- Appdata Storage -->
-  <Config Name="Config &amp; Profile Storage" Target="/config" Default="/mnt/user/appdata/brave-origin" Mode="rw" Description="Persistent directory for browser profile, downloads, and KasmVNC state." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/brave-origin</Config>
+  <Config Name="Config &amp; Profile Storage" Target="/config" Default="/mnt/user/appdata/brave-origin" Mode="rw" Description="Persistent directory for browser profile, downloads, and state." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/brave-origin</Config>
 
   <!-- Authentication -->
-  <Config Name="Enable Authentication" Target="KASM_AUTH_ENABLED" Default="false" Description="Enable HTTP Basic Auth login prompt (false for passwordless access on trusted local network)." Type="Variable" Display="always" Required="false" Mask="false">false</Config>
-  <Config Name="KasmVNC Username" Target="KASM_USER" Default="brave" Description="Username used when KASM_AUTH_ENABLED=true." Type="Variable" Display="always" Required="false" Mask="false">brave</Config>
-  <Config Name="KasmVNC Password" Target="KASM_PASSWORD" Default="" Description="Password used when KASM_AUTH_ENABLED=true." Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="Enable Authentication" Target="AUTH_ENABLED" Default="false" Description="Enable HTTP Basic Auth login prompt (false for passwordless access on trusted local network)." Type="Variable" Display="always" Required="false" Mask="false">false</Config>
+  <Config Name="Username" Target="AUTH_USER" Default="brave" Description="Username used when AUTH_ENABLED=true." Type="Variable" Display="always" Required="false" Mask="false">brave</Config>
+  <Config Name="Password" Target="AUTH_PASSWORD" Default="" Description="Password used when AUTH_ENABLED=true." Type="Variable" Display="always" Required="false" Mask="true"></Config>
 
   <!-- User / Permissions -->
   <Config Name="PUID" Target="PUID" Default="99" Description="Container user ID (Unraid default: 99)." Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>
@@ -43,7 +43,7 @@
   <Config Name="Display Height" Target="DISPLAY_HEIGHT" Default="1080" Description="Virtual desktop height in pixels." Type="Variable" Display="advanced" Required="false" Mask="false">1080</Config>
 
   <!-- Features -->
-  <Config Name="Enable Audio" Target="ENABLE_AUDIO" Default="true" Description="Enable PulseAudio and Single-Origin browser audio streaming." Type="Variable" Display="always" Required="false" Mask="false">true</Config>
+  <Config Name="Enable Audio" Target="ENABLE_AUDIO" Default="true" Description="Enable PulseAudio virtual sink and unified Opus audio streaming." Type="Variable" Display="always" Required="false" Mask="false">true</Config>
   <Config Name="Automatic Updates" Target="AUTO_UPDATE" Default="true" Description="Enable background transaction-safe offline browser updates." Type="Variable" Display="always" Required="false" Mask="false">true</Config>
-  <Config Name="Hardware Acceleration" Target="ENABLE_GPU" Default="false" Description="Enable hardware acceleration (requires Intel/AMD GPU device passthrough)." Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
+  <Config Name="Hardware Acceleration" Target="ENABLE_GPU" Default="true" Description="Enable hardware acceleration (mount /dev/dri devices)." Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
 </Container>
