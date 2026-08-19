@@ -14,14 +14,12 @@ services:
       - seccomp:unconfined
     ports:
       - "${WEB_PORT:-8443}:${WEB_PORT:-8443}"
-      - "${AUDIO_PORT:-4901}:${AUDIO_PORT:-4901}"
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
       - UMASK=${UMASK:-022}
       - TZ=${TZ:-UTC}
       - WEB_PORT=${WEB_PORT:-8443}
-      - AUDIO_PORT=${AUDIO_PORT:-4901}
       - DISPLAY_WIDTH=${DISPLAY_WIDTH:-1920}
       - DISPLAY_HEIGHT=${DISPLAY_HEIGHT:-1080}
       - KASM_AUTH_ENABLED=${KASM_AUTH_ENABLED:-false}

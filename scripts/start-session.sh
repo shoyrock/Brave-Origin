@@ -104,8 +104,8 @@ fi
 AUDIO_PID=""
 start_audio_relay() {
     if [ "${ENABLE_AUDIO:-true}" = "true" ] && [ -f "/usr/local/bin/audio-server.py" ]; then
-        echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Starting Secure Audio WebSocket Relay on port ${AUDIO_PORT:-4901}..."
-        python3 /usr/local/bin/audio-server.py >> "${STATE_DIR}/audio-relay.log" 2>&1 &
+        echo "[supervisor] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Starting Internal Audio WebSocket Relay on 127.0.0.1:4901..."
+        BIND_HOST="127.0.0.1" AUDIO_PORT="4901" python3 /usr/local/bin/audio-server.py >> "${STATE_DIR}/audio-relay.log" 2>&1 &
         AUDIO_PID=$!
         sleep 0.5
         if kill -0 "${AUDIO_PID}" 2>/dev/null; then

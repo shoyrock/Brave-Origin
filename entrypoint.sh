@@ -131,8 +131,10 @@ if [ ! -f "${CONFIG_YAML}" ]; then
     cp /etc/kasmvnc/kasmvnc.yaml "${CONFIG_YAML}"
 fi
 
-# Ensure explicit configured port and resolution in kasmvnc.yaml
-sed -i "s/websocket_port: .*/websocket_port: ${WEB_PORT}/g" "${CONFIG_YAML}" || true
+# Ensure explicit internal loopback port, interface, and resolution in kasmvnc.yaml
+sed -i "s/websocket_port: .*/websocket_port: 8444/g" "${CONFIG_YAML}" || true
+sed -i "s/interface: .*/interface: 127.0.0.1/g" "${CONFIG_YAML}" || true
+sed -i "s/require_ssl: .*/require_ssl: false/g" "${CONFIG_YAML}" || true
 sed -i "s/width: .*/width: ${DISPLAY_WIDTH}/g" "${CONFIG_YAML}" || true
 sed -i "s/height: .*/height: ${DISPLAY_HEIGHT}/g" "${CONFIG_YAML}" || true
 
@@ -234,16 +236,21 @@ else
     fi
 fi
 
-# 8. Web Client Audio Integration
+# 8. Web Client Audio Integration & Ephemeral Session Token
 if [ "${ENABLE_AUDIO:-true}" = "true" ]; then
+    AUDIO_SESSION_TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(16))' 2>/dev/null || head -c 16 /dev/urandom | xxd -p 2>/dev/null || date +%s%N)"
+    export AUDIO_SESSION_TOKEN
     if [ -f "/etc/kasmvnc/audio-client.js" ]; then
         cp -f /etc/kasmvnc/audio-client.js /usr/share/kasmvnc/www/audio-client.js 2>/dev/null || true
+        # Inject ephemeral token directly into served JavaScript file
+        sed -i "s|const token = window.KASM_AUDIO_TOKEN || '';|const token = '${AUDIO_SESSION_TOKEN}';|g" /usr/share/kasmvnc/www/audio-client.js 2>/dev/null || true
         chmod 644 /usr/share/kasmvnc/www/audio-client.js 2>/dev/null || true
         if ! grep -q 'audio-client.js' /usr/share/kasmvnc/www/index.html 2>/dev/null; then
             sed -i 's|</body>|<script src="audio-client.js"></script></body>|' /usr/share/kasmvnc/www/index.html 2>/dev/null || true
         fi
     fi
 else
+    export AUDIO_SESSION_TOKEN=""
     sed -i 's|<script src="audio-client.js"></script>||g' /usr/share/kasmvnc/www/index.html 2>/dev/null || true
 fi
 
@@ -325,6 +332,10 @@ cleanup() {
         fi
     fi
 
+    # Stop Nginx reverse proxy
+    echo "[nginx] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Stopping Nginx reverse proxy..."
+    nginx -s stop 2>/dev/null || pkill -f nginx 2>/dev/null || true
+
     # Stop KasmVNC server session
     echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Stopping KasmVNC server..."
     gosu braveuser vncserver -kill :1 >/dev/null 2>&1 || true
@@ -337,7 +348,19 @@ cleanup() {
 
 trap cleanup SIGTERM SIGINT SIGHUP SIGQUIT
 
-# 12. Display Readiness Summary
+# 12. Configure and Start Nginx Single-Origin Reverse Proxy
+echo "[nginx] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Initializing Single-Origin TLS Reverse Proxy on port ${WEB_PORT:-8443}..."
+if [ -f "/etc/nginx/nginx.conf" ]; then
+    sed -i "s/listen 8443 ssl/listen ${WEB_PORT:-8443} ssl/g" /etc/nginx/nginx.conf 2>/dev/null || true
+    sed -i "s/listen \[::\]:8443 ssl/listen \[::\]:${WEB_PORT:-8443} ssl/g" /etc/nginx/nginx.conf 2>/dev/null || true
+fi
+mkdir -p /var/log/nginx /run
+nginx || {
+    echo "[nginx] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Warning: Nginx failed to start, running config test..."
+    nginx -t || true
+}
+
+# 13. Display Readiness Summary
 echo "========================================================"
 echo " Brave Origin KasmVNC Server Ready!"
 echo " URL:                 https://localhost:${WEB_PORT}"
@@ -346,17 +369,19 @@ if [ "${KASM_AUTH_ENABLED_LOWER}" = "true" ]; then
 else
     echo " Authentication:      Disabled (Network-Level Protection)"
 fi
+echo " Audio Streaming:     ${ENABLE_AUDIO:-true} (Single-Origin /audio)"
 echo " Installed Version:   ${INSTALLED_BRAVE}"
 echo " Profile Version:     ${LAST_RECORDED_VER:-None (new profile)}"
 echo " Update Interval:     ${UPDATE_INTERVAL}s (Downgrade Recovery: ${DOWNGRADE_RETRY_INTERVAL}s)"
 echo "========================================================"
 
-# 13. Drop privileges and start KasmVNC server
+# 14. Drop privileges and start KasmVNC server on internal loopback port 8444
 VNC_OPTS=(
     -config /config/kasmvnc/kasmvnc.yaml
     -geometry "${DISPLAY_WIDTH}x${DISPLAY_HEIGHT}"
     -depth 24
-    -websocketPort "${WEB_PORT}"
+    -interface 127.0.0.1
+    -websocketPort 8444
     -xstartup /usr/local/bin/start-session.sh
     -fg
 )
@@ -365,5 +390,5 @@ if [ "${KASM_AUTH_ENABLED_LOWER}" = "false" ]; then
     VNC_OPTS+=("-disableBasicAuth" "-SecurityTypes" "None")
 fi
 
-echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Launching KasmVNC on display :1 (HTTPS port ${WEB_PORT}, Auth: ${KASM_AUTH_ENABLED_LOWER})..."
+echo "[kasmvnc] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Launching KasmVNC on display :1 (internal port 8444, Auth: ${KASM_AUTH_ENABLED_LOWER})..."
 exec gosu braveuser vncserver :1 "${VNC_OPTS[@]}"

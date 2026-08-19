@@ -138,10 +138,10 @@ jobs:
             echo "TEST 1 Failed: Status was ${STATUS}" >&2; exit 1
           fi
 
-          echo "--- Verifying Audio Relay Health on Port 4901 ---"
-          AUDIO_HEALTH=$(docker exec "${SMOKE_CONTAINER}" curl -k -fsS https://127.0.0.1:4901/ || echo "failed")
+          echo "--- Verifying Single-Origin Audio Route on Port 8443 (/audio) ---"
+          AUDIO_HEALTH=$(docker exec "${SMOKE_CONTAINER}" curl -k -fsS https://127.0.0.1:8443/audio || echo "failed")
           if [ "${AUDIO_HEALTH}" = "Kasm Audio Live" ]; then
-            echo "TEST 1 Audio Relay Healthcheck: SUCCESS"
+            echo "TEST 1 Single-Origin Audio Route Healthcheck: SUCCESS"
           else
             echo "TEST 1 Failed: Audio health check was ${AUDIO_HEALTH}" >&2; exit 1
           fi

@@ -1,6 +1,6 @@
 /**
- * Standalone KasmVNC Web Audio Client
- * Connects to the Secure Audio WebSocket Relay (Port 4901)
+ * Standalone KasmVNC Single-Origin Web Audio Client
+ * Connects to the Secure Same-Origin Audio Endpoint (/audio)
  * Decodes and renders raw stereo PCM (16-bit, 44.1kHz) with low-latency Web Audio API.
  */
 (function() {
@@ -194,10 +194,11 @@
             ws = null;
         }
 
-        const host = window.location.hostname || '127.0.0.1';
-        const wsPort = window.KASM_AUDIO_PORT || 4901;
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const url = `${protocol}//${host}:${wsPort}/`;
+        const host = window.location.host; // Contains hostname:port (e.g. 192.168.10.10:8443 or my-host:8443)
+        const token = window.KASM_AUDIO_TOKEN || '';
+        const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
+        const url = `${protocol}//${host}/audio${tokenParam}`;
 
         console.log(`[KasmAudio] Connecting to Audio Relay at ${url}...`);
 

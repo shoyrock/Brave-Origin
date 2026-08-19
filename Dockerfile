@@ -26,6 +26,7 @@ RUN set -eux; \
         ssl-cert \
         xdg-utils \
         openbox \
+        nginx-light \
         dbus-x11 \
         pulseaudio \
         pulseaudio-utils \
@@ -171,6 +172,7 @@ RUN set -eux; \
 
 # Copy configuration and scripts
 COPY config/kasmvnc.yaml /etc/kasmvnc/kasmvnc.yaml
+COPY config/nginx.conf /etc/nginx/nginx.conf
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY scripts/start-session.sh /usr/local/bin/start-session.sh
 COPY scripts/update-brave.sh /usr/local/bin/update-brave.sh
@@ -192,7 +194,6 @@ ENV PUID=1000 \
     UMASK=022 \
     TZ=UTC \
     WEB_PORT=8443 \
-    AUDIO_PORT=4901 \
     DISPLAY_WIDTH=1920 \
     DISPLAY_HEIGHT=1080 \
     KASM_AUTH_ENABLED=false \
@@ -213,8 +214,8 @@ ENV PUID=1000 \
 # Persistent browser profile, downloads, and Kasm configuration volume
 VOLUME ["/config"]
 
-# Expose KasmVNC HTTPS Web Client Port and Secure Audio WebSocket Port
-EXPOSE 8443 4901
+# Expose KasmVNC Single-Origin HTTPS Web Client Port
+EXPOSE 8443
 
 # Health check to validate KasmVNC HTTPS responsiveness
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \

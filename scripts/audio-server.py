@@ -1,68 +1,25 @@
 #!/usr/bin/env python3
 """
-Standalone KasmVNC Secure Audio WebSocket Relay (RFC 6455)
+Standalone KasmVNC Internal Audio WebSocket Relay (RFC 6455)
 Streams raw stereo PCM (s16le, 44100Hz) from PulseAudio auto_null.monitor
-to HTML5 Web Audio API clients over WSS (TLS/HTTPS).
+to HTML5 Web Audio API clients through Nginx reverse proxy on 127.0.0.1:4901.
 """
 
 import asyncio
 import base64
 import hashlib
 import os
-import signal
-import ssl
 import struct
 import sys
 import urllib.parse
 
 PORT = int(os.environ.get("AUDIO_PORT", "4901"))
-CERT_FILE = os.environ.get("CERT_FILE", "/config/kasmvnc/certs/kasmvnc.pem")
-KEY_FILE = os.environ.get("KEY_FILE", "/config/kasmvnc/certs/kasmvnc.key")
-KASM_AUTH_ENABLED = os.environ.get("KASM_AUTH_ENABLED", "false").lower() == "true"
-KASMPASSWD_FILE = os.environ.get("KASMPASSWD_FILE", "/config/.kasmpasswd")
+BIND_HOST = os.environ.get("BIND_HOST", "127.0.0.1")
 PULSE_SOURCE = os.environ.get("PULSE_SOURCE", "auto_null.monitor")
+AUDIO_SESSION_TOKEN = os.environ.get("AUDIO_SESSION_TOKEN", "").strip()
 
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-
 connected_clients = set()
-audio_subproc = None
-
-def get_allowed_credentials():
-    """Reads allowed user:hash or user:password from .kasmpasswd."""
-    if not os.path.isfile(KASMPASSWD_FILE):
-        return {}
-    users = {}
-    try:
-        with open(KASMPASSWD_FILE, "r") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                parts = line.split(":", 1)
-                if len(parts) == 2:
-                    users[parts[0]] = parts[1]
-    except Exception as e:
-        print(f"[audio-relay] Error reading {KASMPASSWD_FILE}: {e}", file=sys.stderr)
-    return users
-
-def check_auth(headers):
-    """Validates HTTP Basic Auth header if authentication is enabled."""
-    if not KASM_AUTH_ENABLED:
-        return True
-    auth_header = headers.get("authorization", "")
-    if not auth_header.startswith("Basic "):
-        return False
-    try:
-        raw = base64.b64decode(auth_header[6:]).decode("utf-8")
-        user, pwd = raw.split(":", 1)
-        expected_user = os.environ.get("KASM_USER", "brave")
-        expected_pwd = os.environ.get("KASM_PASSWORD", "")
-        if expected_pwd:
-            return user == expected_user and pwd == expected_pwd
-        allowed = get_allowed_credentials()
-        return user in allowed
-    except Exception:
-        return False
 
 def make_ws_accept(key: str) -> str:
     combined = key.strip() + WS_GUID
@@ -88,7 +45,12 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
         writer.close()
         return
 
-    # Read HTTP headers
+    parts = request_line.decode("utf-8", errors="replace").split()
+    if len(parts) < 2:
+        writer.close()
+        return
+    path_and_query = parts[1]
+
     while True:
         line = await reader.readline()
         if not line or line == b"\r\n" or line == b"\n":
@@ -98,14 +60,19 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
             k, v = decoded.split(":", 1)
             headers[k.lower().strip()] = v.strip()
 
-    # Check authentication
-    if not check_auth(headers):
+    parsed = urllib.parse.urlparse(path_and_query)
+    query_params = urllib.parse.parse_qs(parsed.query)
+    token = query_params.get("token", [""])[0]
+
+    # Validate session token if configured
+    if AUDIO_SESSION_TOKEN and token != AUDIO_SESSION_TOKEN:
+        print(f"[audio-relay] Rejected unauthorized connection from {peer}", file=sys.stderr)
         res = (
-            b"HTTP/1.1 401 Unauthorized\r\n"
-            b"WWW-Authenticate: Basic realm=\"Kasm Audio\"\r\n"
-            b"Content-Length: 12\r\n"
+            b"HTTP/1.1 403 Forbidden\r\n"
+            b"Content-Type: text/plain\r\n"
+            b"Content-Length: 9\r\n"
             b"\r\n"
-            b"Unauthorized"
+            b"Forbidden"
         )
         writer.write(res)
         await writer.drain()
@@ -114,14 +81,19 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
 
     ws_key = headers.get("sec-websocket-key")
     if not ws_key:
-        # Simple HTTP health endpoint
-        res = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 15\r\n\r\nKasm Audio Live"
+        # HTTP health status
+        res = (
+            b"HTTP/1.1 200 OK\r\n"
+            b"Content-Type: text/plain\r\n"
+            b"Content-Length: 15\r\n"
+            b"\r\n"
+            b"Kasm Audio Live"
+        )
         writer.write(res)
         await writer.drain()
         writer.close()
         return
 
-    # Send WebSocket handshake response
     accept_key = make_ws_accept(ws_key)
     handshake = (
         f"HTTP/1.1 101 Switching Protocols\r\n"
@@ -184,7 +156,7 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
 
 async def pulse_capture_loop():
     """Captures PulseAudio stream and broadcasts to all connected WebSocket clients."""
-    chunk_size = 4096  # ~23ms at 44100Hz 16-bit stereo (4 bytes/sample -> 1024 samples)
+    chunk_size = 4096  # ~23ms at 44100Hz 16-bit stereo
     while True:
         if not connected_clients:
             await asyncio.sleep(0.2)
@@ -206,7 +178,6 @@ async def pulse_capture_loop():
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL
             )
-            
             while connected_clients and proc.returncode is None:
                 chunk = await proc.stdout.read(chunk_size)
                 if not chunk:
@@ -237,22 +208,8 @@ async def pulse_capture_loop():
             await asyncio.sleep(1)
 
 async def main():
-    ssl_ctx = None
-    if os.path.isfile(CERT_FILE) and os.path.isfile(KEY_FILE):
-        ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ssl_ctx.load_cert_chain(certfile=CERT_FILE, keyfile=KEY_FILE)
-        print(f"[audio-relay] Loaded SSL certificate: {CERT_FILE}")
-    else:
-        print(f"[audio-relay] Warning: SSL certificate not found at {CERT_FILE}, running plain WS")
-
-    server = await asyncio.start_server(
-        handle_client,
-        "0.0.0.0",
-        PORT,
-        ssl=ssl_ctx
-    )
-    print(f"[audio-relay] Listening on port {PORT} (SSL={'Enabled' if ssl_ctx else 'Disabled'})")
-
+    server = await asyncio.start_server(handle_client, BIND_HOST, PORT)
+    print(f"[audio-relay] Internal audio relay listening on {BIND_HOST}:{PORT}")
     capture_task = asyncio.create_task(pulse_capture_loop())
     async with server:
         await server.serve_forever()
