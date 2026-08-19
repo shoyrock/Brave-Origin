@@ -3,17 +3,20 @@ FROM ghcr.io/linuxserver/baseimage-selkies:debiantrixie AS selkies-upstream
 
 # Pinned Selkies Source & Web Dashboard Build at exact commit 92dea42fc70bfcb52e6d98c4e6854872badfe621
 FROM node:20-bookworm-slim AS selkies-build
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates python3 && \
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates python3 patch && \
     git clone https://github.com/selkies-project/selkies.git /selkies-src && \
     cd /selkies-src && \
-    git checkout 92dea42fc70bfcb52e6d98c4e6854872badfe621 && \
+    git checkout 92dea42fc70bfcb52e6d98c4e6854872badfe621
+COPY patches /selkies-src/patches
+RUN cd /selkies-src && \
+    for p in patches/*.patch; do [ -f "$p" ] && patch -p1 < "$p"; done && \
     cd /selkies-src/addons/selkies-web-core && \
     npm install && \
     npm run build && \
     cd /selkies-src/addons/selkies-dashboard && \
     npm install && \
     npm run build && \
-    rm -rf /selkies-src/.git
+    rm -rf /selkies-src/.git /selkies-src/patches
 
 FROM debian:trixie-slim
 
