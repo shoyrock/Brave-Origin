@@ -45,7 +45,7 @@ index ed3c7c9..af8d545 100644
  
    if (isSharedMode) {
 diff --git a/src/selkies/input_handler.py b/src/selkies/input_handler.py
-index e745f81..a79d4b9 100644
+index e745f81..5c656a8 100644
 --- a/src/selkies/input_handler.py
 +++ b/src/selkies/input_handler.py
 @@ -4936,33 +4936,47 @@ class WebRTCInput:
@@ -107,7 +107,7 @@ index e745f81..a79d4b9 100644
 +                env["XDG_RUNTIME_DIR"] = "/tmp/runtime-braveuser"
 +            proc_r = await asyncio.create_subprocess_exec(
 +                "wl-paste", "--type", "text/plain;charset=utf-8", "--no-newline",
-+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
++                stdout=subprocess.PIPE, stderr=None,
 +                env=env
 +            )
 +            stdout, _ = await self._communicate_or_kill(proc_r, 1, "wl-paste")
@@ -145,7 +145,7 @@ index e745f81..a79d4b9 100644
 +                target_type = mime_type if mime_type and mime_type != "text/plain" else "text/plain;charset=utf-8"
 +                proc_w = await asyncio.create_subprocess_exec(
 +                    "wl-copy", "--type", target_type,
-+                    stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
++                    stdin=subprocess.PIPE, stdout=None, stderr=None,
 +                    env=env
 +                )
 +                await self._communicate_or_kill(proc_w, 2, "wl-copy", input=input_bytes)
