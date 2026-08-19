@@ -31,6 +31,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=Etc/UTC \
     AUTO_UPDATE=true \
     ENABLE_AUDIO=true \
+    AUTH_ENABLED=false \
     PIXELFLUX_WAYLAND=true \
     SELKIES_ENABLE_BASIC_AUTH=false \
     SELKIES_ENABLE_DUAL_MODE=false \
@@ -39,17 +40,23 @@ ENV DEBIAN_FRONTEND=noninteractive \
     SELKIES_ADDR=127.0.0.1 \
     XDG_RUNTIME_DIR=/tmp/runtime-braveuser \
     WAYLAND_DISPLAY=wayland-1 \
-    PULSE_SERVER=unix:/tmp/runtime-braveuser/pulse/native \
-    KASM_AUTH_ENABLED=false
+    PULSE_SERVER=unix:/tmp/runtime-braveuser/pulse/native
 
-# 1. Base Utilities, Wayland, Compositor, Audio & Graphics Libraries
+# 1. Add Official Brave Origin Apt Repository (Release Channel)
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gnupg && \
+    install -m 0755 -d /etc/apt/keyrings && \
+    curl -fsSL https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg \
+    -o /etc/apt/keyrings/brave-browser-archive-keyring.gpg && \
+    chmod 644 /etc/apt/keyrings/brave-browser-archive-keyring.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/brave-browser-archive-keyring.gpg arch=amd64] https://brave-browser-apt-release.s3.brave.com/ stable main" \
+    > /etc/apt/sources.list.d/brave-browser-release.list && \
+    rm -rf /var/lib/apt/lists/*
+
+# 2. Base Utilities, Wayland Compositor, Audio, Graphics, Python & Brave Origin
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
-    gnupg \
     procps \
-    psmisc \
-    net-tools \
     iproute2 \
     openssl \
     nginx \
@@ -57,8 +64,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pulseaudio \
     pulseaudio-utils \
     dbus \
-    dbus-x11 \
-    libpam-systemd \
     labwc \
     libwlroots-0.18 \
     wtype \
@@ -94,6 +99,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pil \
     python3-websockets \
     python3-aiohttp \
+    python3-aiofiles \
+    python3-msgpack \
     fonts-liberation \
     fonts-dejavu-core \
     fonts-noto-color-emoji \
@@ -111,10 +118,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrandr2 \
     libasound2t64 \
     cron \
-    sudo \
+    brave-origin \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Ingest Pinned Upstream Pixelflux and pcmflux from LinuxServer, and Selkies Backend + Dashboard from 92dea42f
+# 3. Ingest Pinned Upstream Pixelflux and pcmflux from LinuxServer, and Selkies Backend + Dashboard from 92dea42f
 COPY --from=selkies-upstream /lsiopy/lib/python3.13/site-packages/ /usr/local/lib/python3.13/dist-packages/
 COPY --from=selkies-upstream /usr/bin/selkies-desktop /usr/local/bin/selkies-desktop
 COPY --from=selkies-upstream /usr/bin/wtype /usr/local/bin/wtype
@@ -123,18 +130,7 @@ COPY --from=selkies-build /selkies-src /tmp/selkies-src
 RUN pip install --no-deps /tmp/selkies-src --break-system-packages && \
     mkdir -p /usr/share/selkies/web && \
     cp -r /tmp/selkies-src/addons/selkies-dashboard/dist/* /usr/share/selkies/web/ && \
-    rm -rf /tmp/selkies-src
-
-# 3. Add Official Brave Origin Apt Repository (Release Channel)
-RUN install -m 0755 -d /etc/apt/keyrings && \
-    curl -fsSL https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg \
-    -o /etc/apt/keyrings/brave-browser-archive-keyring.gpg && \
-    chmod 644 /etc/apt/keyrings/brave-browser-archive-keyring.gpg && \
-    echo "deb [signed-by=/etc/apt/keyrings/brave-browser-archive-keyring.gpg arch=amd64] https://brave-browser-apt-release.s3.brave.com/ stable main" \
-    > /etc/apt/sources.list.d/brave-browser-release.list && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends brave-origin && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /tmp/selkies-src /root/.cache
 
 # 4. Create Unprivileged Non-Root User (braveuser)
 RUN groupadd -r render 2>/dev/null || true && \
