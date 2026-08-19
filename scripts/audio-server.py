@@ -60,11 +60,26 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
             k, v = decoded.split(":", 1)
             headers[k.lower().strip()] = v.strip()
 
+    ws_key = headers.get("sec-websocket-key")
+    if not ws_key:
+        # Simple HTTP health endpoint for reverse proxy and container checks
+        res = (
+            b"HTTP/1.1 200 OK\r\n"
+            b"Content-Type: text/plain\r\n"
+            b"Content-Length: 15\r\n"
+            b"\r\n"
+            b"Kasm Audio Live"
+        )
+        writer.write(res)
+        await writer.drain()
+        writer.close()
+        return
+
     parsed = urllib.parse.urlparse(path_and_query)
     query_params = urllib.parse.parse_qs(parsed.query)
     token = query_params.get("token", [""])[0]
 
-    # Validate session token if configured
+    # Validate session token on WebSocket upgrades if configured
     if AUDIO_SESSION_TOKEN and token != AUDIO_SESSION_TOKEN:
         print(f"[audio-relay] Rejected unauthorized connection from {peer}", file=sys.stderr)
         res = (
@@ -73,21 +88,6 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
             b"Content-Length: 9\r\n"
             b"\r\n"
             b"Forbidden"
-        )
-        writer.write(res)
-        await writer.drain()
-        writer.close()
-        return
-
-    ws_key = headers.get("sec-websocket-key")
-    if not ws_key:
-        # HTTP health status
-        res = (
-            b"HTTP/1.1 200 OK\r\n"
-            b"Content-Type: text/plain\r\n"
-            b"Content-Length: 15\r\n"
-            b"\r\n"
-            b"Kasm Audio Live"
         )
         writer.write(res)
         await writer.drain()
