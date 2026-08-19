@@ -116,14 +116,21 @@ if [ "${AUTH_ENABLED_LOWER}" = "true" ]; then
     AUTH_PASS_VAL="${AUTH_PASSWORD:-${KASM_PASSWORD:-}}"
     
     if [ ! -f "${PASSWD_FILE}" ]; then
-        if [ -n "${AUTH_PASS_VAL}" ]; then
+        AUTH_PASS_FILE_VAL="${AUTH_PASSWORD_FILE:-${KASM_PASSWORD_FILE:-}}"
+        if [ -n "${AUTH_PASS_FILE_VAL}" ] && [ -f "${AUTH_PASS_FILE_VAL}" ]; then
+            SECRET_PASS="$(tr -d '\r\n' < "${AUTH_PASS_FILE_VAL}")"
+            echo "[nginx] Creating initial credentials from mounted secret file for user '${AUTH_USER_VAL}'..."
+            htpasswd -bc "${PASSWD_FILE}" "${AUTH_USER_VAL}" "${SECRET_PASS}" >/dev/null 2>&1
+            chmod 644 "${PASSWD_FILE}"
+            chown "${TARGET_UID}:${TARGET_GID}" "${PASSWD_FILE}"
+        elif [ -n "${AUTH_PASS_VAL}" ]; then
             echo "[nginx] Creating initial credentials from environment variables for user '${AUTH_USER_VAL}'..."
             htpasswd -bc "${PASSWD_FILE}" "${AUTH_USER_VAL}" "${AUTH_PASS_VAL}" >/dev/null 2>&1
             chmod 644 "${PASSWD_FILE}"
             chown "${TARGET_UID}:${TARGET_GID}" "${PASSWD_FILE}"
         else
             echo "[nginx] ERROR: AUTH_ENABLED=true but no authentication credentials exist!" >&2
-            echo "[nginx] Set AUTH_PASSWORD or run reset-password.sh." >&2
+            echo "[nginx] Provide AUTH_PASSWORD_FILE, AUTH_PASSWORD, or run reset-password.sh." >&2
             exit 1
         fi
     fi
