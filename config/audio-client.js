@@ -1,13 +1,20 @@
 /**
- * Standalone KasmVNC Single-Origin Web Audio Client with Live Diagnostics
- * - Connects to the Secure Same-Origin Audio Endpoint (/audio)
- * - Decodes and renders raw stereo PCM (16-bit, 44.1kHz) with low-latency Web Audio API
- * - Enforces zero audio backlog while suspended and instant playback on first interaction
- * - Exposes window.KASM_AUDIO_LOG for real-client browser timing analysis
- * - 100% independent from clipboard subsystem
+ * Standalone KasmVNC Single-Origin Web Audio Client
+ * 
+ * Guarantees:
+ * 1. 100% independent from clipboard subsystem
+ * 2. Connects to the Secure Same-Origin Audio Endpoint (/audio)
+ * 3. Idempotent initialization guard (window.__BRAVE_ORIGIN_AUDIO_INITIALIZED__)
+ * 4. Maximum active WebSocket count = 1 (single authoritative reconnect scheduler)
+ * 5. Zero audio backlog while suspended and instant low-latency playback upon interaction
  */
 (function() {
     'use strict';
+
+    if (window.__BRAVE_ORIGIN_AUDIO_INITIALIZED__) {
+        return;
+    }
+    window.__BRAVE_ORIGIN_AUDIO_INITIALIZED__ = true;
 
     window.KASM_AUDIO_TOKEN = window.KASM_AUDIO_TOKEN || '__AUDIO_SESSION_TOKEN__';
     window.KASM_AUDIO_LOG = window.KASM_AUDIO_LOG || [];
@@ -42,14 +49,12 @@
         if (window.KASM_AUDIO_LOG.length > 200) {
             window.KASM_AUDIO_LOG.shift();
         }
-        console.log(`[KasmAudio] [${entry.time}] ${name}:`, data);
     }
 
     function initAudioContext() {
         if (!audioCtx) {
             const AudioContextClass = window.AudioContext || window.webkitAudioContext;
             if (!AudioContextClass) {
-                console.warn('[KasmAudio] Web Audio API is not supported in this browser.');
                 logAudioEvent('audio_unsupported');
                 return false;
             }
@@ -63,7 +68,6 @@
 
         if (audioCtx.state === 'suspended') {
             const t0 = performance.now();
-            logAudioEvent('audioCtx_resume_call');
             audioCtx.resume().then(() => {
                 const dur = Math.round(performance.now() - t0);
                 nextPlayTime = audioCtx.currentTime + JITTER_BUFFER_SEC;
@@ -153,7 +157,6 @@
             updateUI();
         });
 
-        // Global interaction listeners in capturing phase to unlock AudioContext on first gesture
         const userInteractionHandler = (e) => {
             logAudioEvent('user_interaction', { type: e.type });
             initAudioContext();
@@ -202,7 +205,6 @@
     }
 
     function playPCMChunk(arrayBuffer) {
-        // Drop incoming audio while suspended to avoid stale backlog
         if (!audioCtx || audioCtx.state !== 'running' || isMuted) {
             if (!hasReceivedFirstPcm) {
                 logAudioEvent('first_pcm_frame_dropped_suspended', { bytes: arrayBuffer.byteLength });
@@ -234,7 +236,6 @@
         source.connect(gainNode);
 
         const currentTime = audioCtx.currentTime;
-        // Anti-drift: Clamp nextPlayTime if behind or too far ahead
         if (nextPlayTime < currentTime || nextPlayTime > currentTime + MAX_BUFFER_AHEAD) {
             const driftLead = Math.round((nextPlayTime - currentTime) * 1000);
             logAudioEvent('schedule_reset_antidrift', { drift_lead_ms: driftLead });
@@ -269,9 +270,23 @@
         }, 500);
     }
 
+    function scheduleReconnect() {
+        if (reconnectTimer) return; // Exactly 1 reconnect timer active
+        reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            connectWebSocket();
+        }, 1500);
+    }
+
     function connectWebSocket() {
         if (ws) {
-            try { ws.close(); } catch (e) {}
+            try {
+                ws.onopen = null;
+                ws.onmessage = null;
+                ws.onclose = null;
+                ws.onerror = null;
+                ws.close();
+            } catch (e) {}
             ws = null;
         }
 
@@ -304,20 +319,19 @@
                 isConnected = false;
                 isPlaying = false;
                 updateUI();
-                clearTimeout(reconnectTimer);
-                reconnectTimer = setTimeout(connectWebSocket, 1500);
+                scheduleReconnect();
             };
 
-            ws.onerror = function(err) {
+            ws.onerror = function() {
                 logAudioEvent('ws_error');
                 isConnected = false;
                 isPlaying = false;
                 updateUI();
+                scheduleReconnect();
             };
         } catch (e) {
             logAudioEvent('ws_init_exception', { error: e.message });
-            clearTimeout(reconnectTimer);
-            reconnectTimer = setTimeout(connectWebSocket, 1500);
+            scheduleReconnect();
         }
     }
 

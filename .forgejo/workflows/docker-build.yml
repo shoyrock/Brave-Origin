@@ -48,6 +48,22 @@ jobs:
           docker version
           docker info | grep -E 'Server Version|Operating System|Architecture|CPUs|Total Memory' || true
 
+      - name: Verify Audio / Clipboard Structural Separation
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "========================================================"
+          echo " Verifying Mechanical Code Boundaries & Separation"
+          echo "========================================================"
+          # 1. audio-client.js must contain zero clipboard logic
+          ! grep -E 'navigator\.clipboard|clipboardPasteFrom|clipboardText|clipboardUp|clipboardDown|clipboardSeamless' config/audio-client.js
+          # 2. clipboard-client.js must contain zero audio logic
+          ! grep -E 'AudioContext|webkitAudioContext|createGain|createBuffer|/audio|playPCMChunk|nextPlayTime|JITTER_BUFFER_SEC|kasm-audio-widget' config/clipboard-client.js
+          # 3. Initialization guards must exist
+          grep 'window.__BRAVE_ORIGIN_CLIPBOARD_INITIALIZED__' config/clipboard-client.js
+          grep 'window.__BRAVE_ORIGIN_AUDIO_INITIALIZED__' config/audio-client.js
+          echo "Code boundary assertions: PASSED"
+
       - name: Build Brave Origin Docker Image
         shell: bash
         run: |
@@ -145,6 +161,17 @@ jobs:
             echo "TEST 1 Single-Origin Audio Route Healthcheck: SUCCESS"
           else
             echo "TEST 1 Failed: Audio health check was ${AUDIO_HEALTH}" >&2; exit 1
+          fi
+
+          echo "--- Verifying Injected Script Tags in index.html ---"
+          HTML_CONTENT=$(docker exec "${SMOKE_CONTAINER}" cat /usr/share/kasmvnc/www/index.html)
+          CLIP_COUNT=$(echo "${HTML_CONTENT}" | grep -o 'clipboard-client\.js' | wc -l)
+          AUDIO_COUNT=$(echo "${HTML_CONTENT}" | grep -o 'audio-client\.js' | wc -l)
+          echo "Script tags found: clipboard=${CLIP_COUNT}, audio=${AUDIO_COUNT}"
+          if [ "${CLIP_COUNT}" -eq 1 ] && [ "${AUDIO_COUNT}" -eq 1 ]; then
+            echo "TEST 1 Script tag counts verified: SUCCESS"
+          else
+            echo "TEST 1 Failed: unexpected script tag counts (clip=${CLIP_COUNT}, audio=${AUDIO_COUNT})" >&2; exit 1
           fi
 
           echo "--- Setting Persistent Credentials with reset-password.sh ---"

@@ -1,14 +1,22 @@
 /**
- * Standalone KasmVNC Seamless Bidirectional Clipboard Client with Live Diagnostics
- * - Provides single consolidated path for local -> remote and remote -> local clipboard synchronization
- * - Prioritizes trusted native paste event with synchronous clipboardData
- * - Graceful fallback to navigator.clipboard.readText() when paste event is unhandled
- * - Automatically retries remote -> local writeText on focus/interaction
- * - Live diagnostic HUD and window.KASM_CLIPBOARD_LOG for real-client verification
- * - 100% independent from audio subsystem and ENABLE_AUDIO flag
+ * Standalone KasmVNC Seamless Bidirectional Clipboard Client
+ * 
+ * Guarantees:
+ * 1. 100% independent from audio subsystem and ENABLE_AUDIO flag
+ * 2. Exactly one authoritative execution path per user action (native paste event with microtask fallback)
+ * 3. Idempotent initialization guard (window.__BRAVE_ORIGIN_CLIPBOARD_INITIALIZED__)
+ * 4. Key-repeat duplicate protection (ignores e.repeat)
+ * 5. Modifier key release safety (try/finally on remote key dispatch)
+ * 6. Dynamic RFB resolution on reconnects without leaking DOM listeners
+ * 7. Deduplicated remote -> local copy writes (prevents redundant writes on focus/click)
  */
 (function() {
     'use strict';
+
+    if (window.__BRAVE_ORIGIN_CLIPBOARD_INITIALIZED__) {
+        return;
+    }
+    window.__BRAVE_ORIGIN_CLIPBOARD_INITIALIZED__ = true;
 
     window.BRAVE_ORIGIN_CLIENT_BUILD = window.BRAVE_ORIGIN_CLIENT_BUILD || '__BUILD_COMMIT__';
     window.KASM_CLIPBOARD_LOG = window.KASM_CLIPBOARD_LOG || [];
@@ -16,9 +24,13 @@
     const XK_Control_L = 65507;
     const XK_v = 118;
 
-    let isRfbInitialized = false;
-    let pendingRemoteClipboard = null;
-    let lastPasteTime = 0;
+    let attachedRfb = null;
+    let pendingRemoteText = null;
+    let lastWrittenRemoteText = null;
+    let isWritingRemoteText = false;
+    let activeGestureId = 0;
+    let gestureHandled = false;
+    let fallbackTimer = null;
     let isPasting = false;
     let clipboardStatus = 'Initializing';
 
@@ -32,11 +44,10 @@
         if (window.KASM_CLIPBOARD_LOG.length > 200) {
             window.KASM_CLIPBOARD_LOG.shift();
         }
-        console.log(`[KasmClipboard] [${entry.time}] ${name}:`, data);
         updateDiagnosticHUD();
     }
 
-    function getRfb() {
+    function getCurrentRfb() {
         return window.UI && window.UI.rfb;
     }
 
@@ -145,54 +156,65 @@
         }
     }
 
+    function onRemoteClipboard(e) {
+        const text = e.detail && e.detail.text;
+        if (typeof text === 'string' && text.length > 0) {
+            if (text === lastWrittenRemoteText) {
+                return; // Already present in local clipboard
+            }
+            logEvent('server_clipboard_event', { length: text.length });
+            pendingRemoteText = text;
+            flushPendingRemoteClipboard('server_clipboard_event');
+        }
+    }
+
     function flushPendingRemoteClipboard(reason) {
-        if (!pendingRemoteClipboard) return;
+        if (!pendingRemoteText || isWritingRemoteText || pendingRemoteText === lastWrittenRemoteText) {
+            return;
+        }
 
         if (navigator.clipboard && navigator.clipboard.writeText) {
-            const textToSync = pendingRemoteClipboard;
+            const textToSync = pendingRemoteText;
+            isWritingRemoteText = true;
             logEvent('writeText_start', { reason, length: textToSync.length });
+
             navigator.clipboard.writeText(textToSync).then(() => {
                 logEvent('writeText_success', { length: textToSync.length });
-                if (pendingRemoteClipboard === textToSync) {
-                    pendingRemoteClipboard = null;
+                lastWrittenRemoteText = textToSync;
+                if (pendingRemoteText === textToSync) {
+                    pendingRemoteText = null;
                 }
                 updateStatus('Ready (Remote Synced)');
             }).catch(err => {
                 logEvent('writeText_failure', { error_name: err.name, message: err.message });
                 updateStatus(`Waiting for focus to sync (${err.name})`);
+            }).finally(() => {
+                isWritingRemoteText = false;
             });
         }
     }
 
-    function attachRfbListeners() {
-        const rfb = getRfb();
-        if (!rfb || isRfbInitialized) return !!rfb;
+    function ensureRfbAttached() {
+        const rfb = getCurrentRfb();
+        if (!rfb || rfb === attachedRfb) return !!attachedRfb;
 
         try {
-            // Configure RFB clipboard state
+            if (attachedRfb && typeof attachedRfb.removeEventListener === 'function') {
+                try { attachedRfb.removeEventListener('clipboard', onRemoteClipboard); } catch(e) {}
+            }
+
             rfb.clipboardUp = true;
             rfb.clipboardDown = true;
             rfb.clipboardSeamless = true;
             rfb.clipboardBinary = typeof navigator.clipboard?.read === 'function';
 
+            rfb.addEventListener('clipboard', onRemoteClipboard);
+            attachedRfb = rfb;
+
             logEvent('rfb_attached', {
-                clipboardUp: rfb.clipboardUp,
-                clipboardDown: rfb.clipboardDown,
-                clipboardSeamless: rfb.clipboardSeamless,
-                clipboardBinary: rfb.clipboardBinary
+                state: rfb._rfbConnectionState,
+                clipboardSeamless: rfb.clipboardSeamless
             });
-
-            // Remote -> Local: Server X11 clipboard broadcasts
-            rfb.addEventListener('clipboard', (e) => {
-                const text = e.detail && e.detail.text;
-                if (typeof text === 'string' && text.length > 0) {
-                    logEvent('server_clipboard_event', { length: text.length });
-                    pendingRemoteClipboard = text;
-                    flushPendingRemoteClipboard('server_clipboard_event');
-                }
-            });
-
-            isRfbInitialized = true;
             updateStatus('Ready (Seamless Active)');
             return true;
         } catch (e) {
@@ -201,22 +223,36 @@
         }
     }
 
-    // Consolidated Local -> Remote Paste Function
+    function dispatchRemoteCtrlV(rfb, source) {
+        const keyboard = rfb && rfb._keyboard;
+        if (!keyboard || typeof keyboard._sendKeyEvent !== 'function') return;
+
+        logEvent('remote_key_dispatch_start', { source });
+        try {
+            keyboard._sendKeyEvent(XK_Control_L, 'ControlLeft', true);
+            keyboard._sendKeyEvent(XK_v, 'KeyV', true);
+        } finally {
+            keyboard._sendKeyEvent(XK_v, 'KeyV', false);
+            keyboard._sendKeyEvent(XK_Control_L, 'ControlLeft', false);
+            logEvent('remote_key_dispatch_complete', { source });
+        }
+    }
+
     async function executeLocalToRemotePaste(source, rawText) {
-        const rfb = getRfb();
+        ensureRfbAttached();
+        const rfb = getCurrentRfb();
         if (!rfb || rfb._rfbConnectionState !== 'connected') {
             logEvent('paste_aborted', { reason: 'rfb_not_connected' });
             return false;
         }
 
-        if (isPasting && Date.now() - lastPasteTime < 150) {
-            logEvent('paste_throttled', { reason: 'duplicate_in_progress' });
+        if (isPasting) {
+            logEvent('paste_throttled', { reason: 'paste_in_progress' });
             return false;
         }
 
         let clipboardText = rawText;
 
-        // If rawText was not provided (e.g. keydown fallback), fetch asynchronously
         if (!clipboardText && navigator.clipboard && navigator.clipboard.readText) {
             logEvent('readText_start', { source });
             try {
@@ -225,7 +261,6 @@
             } catch (err) {
                 logEvent('readText_failure', { error_name: err.name, message: err.message });
                 updateStatus(`Browser blocked read (${err.name})`);
-                // Fallback: forward raw Ctrl+V keysym so user can still trigger X11 paste
                 dispatchRemoteCtrlV(rfb, 'raw_fallback');
                 return false;
             }
@@ -237,16 +272,12 @@
         }
 
         isPasting = true;
-        lastPasteTime = Date.now();
 
         try {
-            // 1. Send clipboard content packet to RFB / X11
             logEvent('clipboardPasteFrom_call', { source, length: clipboardText.length });
             if (typeof rfb.clipboardPasteFrom === 'function') {
                 rfb.clipboardPasteFrom(clipboardText);
             }
-
-            // 2. Dispatch remote Ctrl+V keystrokes in FIFO sequence to trigger X11 paste
             dispatchRemoteCtrlV(rfb, source);
             updateStatus('Pasted (Synced)');
             return true;
@@ -256,25 +287,14 @@
         } finally {
             setTimeout(() => {
                 isPasting = false;
-            }, 100);
-        }
-    }
-
-    function dispatchRemoteCtrlV(rfb, source) {
-        logEvent('remote_key_dispatch_start', { source });
-        const keyboard = rfb._keyboard;
-        if (keyboard && typeof keyboard._sendKeyEvent === 'function') {
-            keyboard._sendKeyEvent(XK_Control_L, 'ControlLeft', true);
-            keyboard._sendKeyEvent(XK_v, 'KeyV', true);
-            keyboard._sendKeyEvent(XK_v, 'KeyV', false);
-            keyboard._sendKeyEvent(XK_Control_L, 'ControlLeft', false);
-            logEvent('remote_key_dispatch_complete', { source });
+            }, 80);
         }
     }
 
     // 1. Primary Handler: Trusted Native "paste" Event
     window.addEventListener('paste', (e) => {
-        const rfb = getRfb();
+        ensureRfbAttached();
+        const rfb = getCurrentRfb();
         if (!rfb || rfb._rfbConnectionState !== 'connected') return;
 
         const hasClipboardData = !!(e.clipboardData && typeof e.clipboardData.getData === 'function');
@@ -287,6 +307,12 @@
         });
 
         if (text && text.length > 0) {
+            gestureHandled = true;
+            if (fallbackTimer) {
+                clearTimeout(fallbackTimer);
+                fallbackTimer = null;
+            }
+
             e.stopPropagation();
             e.stopImmediatePropagation();
             e.preventDefault();
@@ -295,32 +321,48 @@
         }
     }, { capture: true });
 
-    // 2. Secondary Handler: Capture-phase KeyDown for Ctrl+V / Cmd+V
+    // 2. Secondary Handler: KeyDown with Fallback Timer (Only runs if native paste event does not fire)
     window.addEventListener('keydown', (e) => {
         if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.code === 'KeyV' || e.key === 'v' || e.key === 'V')) {
-            const rfb = getRfb();
+            if (e.repeat) {
+                // Ignore key repeat to prevent duplicate remote paste operations
+                return;
+            }
+
+            ensureRfbAttached();
+            const rfb = getCurrentRfb();
             if (!rfb || rfb._rfbConnectionState !== 'connected') return;
 
+            const gestureId = ++activeGestureId;
+            gestureHandled = false;
+
             logEvent('keydown_ctrl_v', {
+                gestureId,
                 isTrusted: e.isTrusted,
-                code: e.code,
-                key: e.key,
-                ctrlKey: e.ctrlKey,
-                metaKey: e.metaKey
+                code: e.code
             });
 
-            // Prevent KasmVNC default handler from sending an out-of-order raw Ctrl+V
-            e.stopPropagation();
+            // Prevent KasmVNC default handler from sending an un-synchronized raw Ctrl+V keystroke
             e.stopImmediatePropagation();
-            e.preventDefault();
 
-            executeLocalToRemotePaste('keydown_gesture', null);
+            // Schedule fallback timer: only executes if native paste event did not handle this gesture
+            if (fallbackTimer) clearTimeout(fallbackTimer);
+            fallbackTimer = setTimeout(async () => {
+                fallbackTimer = null;
+                if (gestureId !== activeGestureId || gestureHandled) {
+                    return; // Successfully handled by native paste event
+                }
+                gestureHandled = true;
+                logEvent('fallback_timer_fired', { gestureId });
+                await executeLocalToRemotePaste('fallback_keydown', null);
+            }, 35);
         }
     }, { capture: true });
 
     // 3. Focus & Visibility Change Handlers
     window.addEventListener('focus', () => {
         logEvent('window_focus', { hasFocus: document.hasFocus(), visibility: document.visibilityState });
+        ensureRfbAttached();
         flushPendingRemoteClipboard('window_focus');
     }, { passive: true });
 
@@ -331,25 +373,22 @@
     document.addEventListener('visibilitychange', () => {
         logEvent('visibilitychange', { state: document.visibilityState });
         if (document.visibilityState === 'visible') {
+            ensureRfbAttached();
             flushPendingRemoteClipboard('visibility_visible');
         }
     }, { passive: true });
 
     window.addEventListener('pointerdown', () => {
+        ensureRfbAttached();
         flushPendingRemoteClipboard('pointerdown');
     }, { capture: true, passive: true });
 
-    // Initialize UI and RFB listener
+    // 4. Initialization
     function init() {
         createDiagnosticHUD();
         checkPermissions();
-        if (!attachRfbListeners()) {
-            const pollTimer = setInterval(() => {
-                if (attachRfbListeners()) {
-                    clearInterval(pollTimer);
-                }
-            }, 200);
-        }
+        ensureRfbAttached();
+        setInterval(ensureRfbAttached, 1000);
     }
 
     if (document.readyState === 'loading') {
