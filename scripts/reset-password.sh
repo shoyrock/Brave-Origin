@@ -5,10 +5,10 @@ set -eo pipefail
 # Web Authentication Password Initialization & Reset Utility
 # ==============================================================================
 
-KASM_USER="${KASM_USER:-brave}"
+AUTH_USER="${AUTH_USER:-${KASM_USER:-brave}}"
 PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
-KASMPASSWD_FILE="/config/.kasmpasswd"
+PASSWD_FILE="/config/.passwd"
 
 ARG="$1"
 
@@ -20,13 +20,13 @@ else
     GENERATED=false
 fi
 
-# Clean temporary default user credentials before creating new user password
-rm -f "${KASMPASSWD_FILE}" 2>/dev/null || true
+# Clean existing credentials file before creating new password
+rm -f "${PASSWD_FILE}" /config/.kasmpasswd 2>/dev/null || true
 
 # Configure credentials via htpasswd
-htpasswd -bc "${KASMPASSWD_FILE}" "${KASM_USER}" "${PASSWORD}" >/dev/null 2>&1
-chmod 644 "${KASMPASSWD_FILE}" 2>/dev/null || true
-chown "${PUID}:${PGID}" "${KASMPASSWD_FILE}" 2>/dev/null || true
+htpasswd -bc "${PASSWD_FILE}" "${AUTH_USER}" "${PASSWORD}" >/dev/null 2>&1
+chmod 644 "${PASSWD_FILE}" 2>/dev/null || true
+chown "${PUID}:${PGID}" "${PASSWD_FILE}" 2>/dev/null || true
 
 # Reload Nginx if running
 if pgrep -x nginx >/dev/null 2>&1; then
@@ -34,14 +34,15 @@ if pgrep -x nginx >/dev/null 2>&1; then
 fi
 
 echo "================================================================================"
-echo "[auth] Credentials configured for user '${KASM_USER}'"
+echo "[auth] Credentials configured for user '${AUTH_USER}'"
 if [ "${GENERATED}" = "true" ]; then
     echo " Generated Password: ${PASSWORD}"
     echo ""
     echo " NOTICE: This password will NOT be displayed in container logs."
     echo " Store it securely. To change it later, run:"
-    echo "   docker exec Brave-Origin-Wayland /usr/local/bin/reset-password.sh <new_password>"
+    echo "   docker exec Brave-Origin /usr/local/bin/reset-password.sh <new_password>"
 else
     echo " Password successfully updated to user-provided value."
 fi
 echo "================================================================================"
+

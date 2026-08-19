@@ -24,9 +24,17 @@ mkdir -p "${XDG_RUNTIME_DIR}" /config/state /config/downloads /config/profile
 chmod 700 "${XDG_RUNTIME_DIR}"
 rm -f "${XDG_RUNTIME_DIR}"/wayland-* "${XDG_RUNTIME_DIR}"/pulse/pid 2>/dev/null || true
 
+# Helper function to check UNIX domain socket connectivity
+check_socket_ready() {
+    local socket_path="$1"
+    python3 -c "import socket; s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.settimeout(0.5); s.connect('${socket_path}'); s.close()" 2>/dev/null
+}
+
 # 1. Start D-Bus Session Daemon
 if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
-    eval $(dbus-launch --sh-syntax)
+    mkdir -p "${XDG_RUNTIME_DIR}/dbus"
+    dbus-daemon --session --fork --address="unix:path=${XDG_RUNTIME_DIR}/dbus/session_bus_socket"
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/dbus/session_bus_socket"
 fi
 
 # 2. Start PulseAudio Virtual Sink (if ENABLE_AUDIO=true)
@@ -43,7 +51,7 @@ else
     export AUDIO_ENABLED=false
 fi
 
-# 3. Start Selkies Streaming Server (Smithay Wayland Display)
+# 3. Start Selkies Streaming Server (Smithay Wayland Display on 127.0.0.1:8082)
 echo "[start-session] Starting Selkies Wayland display & streaming server on 127.0.0.1:8082..."
 export SELKIES_AUDIO_ENABLED="${AUDIO_ENABLED}"
 export SELKIES_AUDIO_DEVICE_NAME="output.monitor"
@@ -71,7 +79,7 @@ SMITHAY_SOCKET=""
 while [ -z "${SMITHAY_SOCKET}" ]; do
     for s in "${XDG_RUNTIME_DIR}"/wayland-*; do
         if [ -S "${s}" ]; then
-            if python3 -c "import socket; s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.settimeout(0.5); s.connect('${s}'); s.close()" 2>/dev/null; then
+            if check_socket_ready "${s}"; then
                 SMITHAY_SOCKET="${s}"
                 export SMITHAY_DISPLAY="$(basename "${s}")"
                 export WAYLAND_DISPLAY="${SMITHAY_DISPLAY}"
@@ -79,9 +87,7 @@ while [ -z "${SMITHAY_SOCKET}" ]; do
             fi
         fi
     done
-    if [ -n "${SMITHAY_SOCKET}" ]; then
-        break
-    fi
+    [ -n "${SMITHAY_SOCKET}" ] && break
     sleep 0.2
     ELAPSED=$((ELAPSED + 1))
     if [ "${ELAPSED}" -ge "$((TIMEOUT * 5))" ]; then
@@ -90,7 +96,7 @@ while [ -z "${SMITHAY_SOCKET}" ]; do
         exit 1
     fi
 done
-echo "[start-session] Root Wayland display ready and accepting connections: ${SMITHAY_SOCKET} (WAYLAND_DISPLAY=${WAYLAND_DISPLAY})"
+echo "[start-session] Root Wayland display ready: ${SMITHAY_SOCKET} (WAYLAND_DISPLAY=${WAYLAND_DISPLAY})"
 
 # 5. Start Labwc Wayland Window Manager on root display
 echo "[start-session] Starting Labwc window manager on root display ${WAYLAND_DISPLAY}..."
@@ -127,16 +133,14 @@ LABWC_SOCKET=""
 while [ -z "${LABWC_SOCKET}" ]; do
     for s in "${XDG_RUNTIME_DIR}"/wayland-*; do
         if [ -S "${s}" ] && [ "${s}" != "${SMITHAY_SOCKET}" ]; then
-            if python3 -c "import socket; s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.settimeout(0.5); s.connect('${s}'); s.close()" 2>/dev/null; then
+            if check_socket_ready "${s}"; then
                 LABWC_SOCKET="${s}"
                 export LABWC_DISPLAY="$(basename "${s}")"
                 break
             fi
         fi
     done
-    if [ -n "${LABWC_SOCKET}" ]; then
-        break
-    fi
+    [ -n "${LABWC_SOCKET}" ] && break
     sleep 0.2
     ELAPSED=$((ELAPSED + 1))
     if [ "${ELAPSED}" -ge "$((TIMEOUT * 5))" ]; then
@@ -160,7 +164,7 @@ else
     GPU_FLAGS="--disable-gpu --disable-gpu-compositing"
 fi
 
-# 7. Launch Brave Origin Natively on Wayland
+# 7. Launch Brave Origin Natively on Wayland (Direct Process Execution)
 echo "[start-session] Starting Brave Origin with native Wayland Ozone backend..."
 rm -f /config/profile/Singleton* 2>/dev/null || true
 exec /opt/brave.com/brave-origin/brave \
@@ -174,4 +178,4 @@ exec /opt/brave.com/brave-origin/brave \
     --password-store=basic \
     --start-maximized \
     ${GPU_FLAGS} \
-    "$@" 2>&1 | tee -a /config/state/brave.log
+    "$@" >> /config/state/brave.log 2>&1
