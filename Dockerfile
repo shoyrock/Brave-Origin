@@ -1,13 +1,19 @@
 # syntax=docker/dockerfile:1
 FROM ghcr.io/linuxserver/baseimage-selkies:debiantrixie AS selkies-upstream
 
-# Pinned Selkies Source at exact commit 92dea42fc70bfcb52e6d98c4e6854872badfe621
-FROM debian:trixie-slim AS selkies-src
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && \
+# Pinned Selkies Source & Web Dashboard Build at exact commit 92dea42fc70bfcb52e6d98c4e6854872badfe621
+FROM node:20-bookworm-slim AS selkies-build
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates python3 && \
     git clone https://github.com/selkies-project/selkies.git /selkies-src && \
     cd /selkies-src && \
     git checkout 92dea42fc70bfcb52e6d98c4e6854872badfe621 && \
-    rm -rf .git
+    cd /selkies-src/addons/selkies-web-core && \
+    npm install && \
+    npm run build && \
+    cd /selkies-src/addons/selkies-dashboard && \
+    npm install && \
+    npm run build && \
+    rm -rf /selkies-src/.git
 
 FROM debian:trixie-slim
 
@@ -23,6 +29,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     AUTO_UPDATE=true \
     ENABLE_AUDIO=true \
     PIXELFLUX_WAYLAND=true \
+    SELKIES_ENABLE_BASIC_AUTH=false \
     SELKIES_ENABLE_DUAL_MODE=false \
     SELKIES_PORT=8082 \
     CUSTOM_WS_PORT=8082 \
@@ -104,14 +111,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     sudo \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Ingest Pinned Upstream Selkies, Pixelflux, pcmflux, and Web Dashboard
+# 2. Ingest Pinned Upstream Pixelflux and pcmflux from LinuxServer, and Selkies Backend + Dashboard from 92dea42f
 COPY --from=selkies-upstream /lsiopy/lib/python3.13/site-packages/ /usr/local/lib/python3.13/dist-packages/
 COPY --from=selkies-upstream /usr/bin/selkies-desktop /usr/local/bin/selkies-desktop
 COPY --from=selkies-upstream /usr/bin/wtype /usr/local/bin/wtype
-COPY --from=selkies-upstream /usr/share/selkies/selkies-dashboard/ /usr/share/selkies/web/
-# Install pinned Selkies 92dea42fc70bfcb52e6d98c4e6854872badfe621
-COPY --from=selkies-src /selkies-src /tmp/selkies-src
-RUN pip install --no-deps /tmp/selkies-src --break-system-packages && rm -rf /tmp/selkies-src
+# Install matching Selkies Python backend and web dashboard built at 92dea42f
+COPY --from=selkies-build /selkies-src /tmp/selkies-src
+RUN pip install --no-deps /tmp/selkies-src --break-system-packages && \
+    mkdir -p /usr/share/selkies/web && \
+    cp -r /tmp/selkies-src/addons/selkies-dashboard/dist/* /usr/share/selkies/web/ && \
+    rm -rf /tmp/selkies-src
 
 # 3. Add Official Brave Origin Apt Repository (Release Channel)
 RUN install -m 0755 -d /etc/apt/keyrings && \

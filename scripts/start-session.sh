@@ -47,6 +47,7 @@ fi
 echo "[start-session] Starting Selkies Wayland display & streaming server on 127.0.0.1:8082..."
 export SELKIES_AUDIO_ENABLED="${AUDIO_ENABLED}"
 export SELKIES_AUDIO_DEVICE_NAME="output.monitor"
+export SELKIES_ENABLE_BASIC_AUTH=false
 export SELKIES_ENABLE_DUAL_MODE=false
 export SELKIES_PORT=8082
 export CUSTOM_WS_PORT=8082
@@ -55,6 +56,7 @@ python3 -m selkies \
     --mode=websockets \
     --wayland=true \
     --app-wayland-display=wayland-0 \
+    --enable-basic-auth=false \
     > /config/state/selkies.log 2>&1 &
 SELKIES_PID=$!
 echo "${SELKIES_PID}" > /config/state/selkies.pid
