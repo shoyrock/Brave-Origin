@@ -79,6 +79,7 @@ chmod 700 /tmp/runtime-braveuser
 
 # Fast non-recursive ownership configuration for runtime directories
 chown "${TARGET_UID}:${TARGET_GID}" /config /config/profile /config/downloads /config/state /config/ssl /tmp/runtime-braveuser /tmp/brave-cache
+chown "${TARGET_UID}:${TARGET_GID}" /config/state/* 2>/dev/null || true
 
 # 4. Generate Self-Signed SSL/TLS Certificates for HTTPS
 if [ ! -f "/config/ssl/cert.pem" ] || [ ! -f "/config/ssl/cert.key" ]; then
