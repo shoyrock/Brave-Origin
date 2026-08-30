@@ -113,26 +113,35 @@ echo "[start-session] Root Wayland display ready: ${SMITHAY_SOCKET} (WAYLAND_DIS
 # 5. Start Labwc Wayland Window Manager on root display
 echo "[start-session] Starting Labwc window manager on root display ${WAYLAND_DISPLAY}..."
 mkdir -p /config/.config/labwc
-if [ ! -f "/config/.config/labwc/rc.xml" ]; then
-    cat << 'EOF' > /config/.config/labwc/rc.xml
+# Kiosk lockdown: the canonical rc.xml is rewritten on every start so a
+# persisted config can never re-enable window management or desktop access.
+cat << 'EOF' > /config/.config/labwc/rc.xml
 <?xml version="1.0"?>
 <labwc_config>
   <theme>
     <name>Adwaita</name>
     <cornerRadius>4</cornerRadius>
   </theme>
+  <!-- Kiosk appliance policy: no decorations and no window management.
+       The browser is launched fullscreen (--kiosk) and is the only surface. -->
   <windowRules>
-    <windowRule identifier="*" serverDecoration="no">
-      <action name="Maximize" />
-    </windowRule>
+    <windowRule identifier="*" serverDecoration="no" />
   </windowRules>
+  <!-- No default keyboard bindings: window switching, closing, and
+       maximization shortcuts are unavailable. Explicitly swallow common
+       quit/close/switch combos so the browser cannot be dismissed. -->
+  <keyboard>
+    <keybind key="C-q"><action name="None" /></keybind>
+    <keybind key="C-S-q"><action name="None" /></keybind>
+    <keybind key="A-F4"><action name="None" /></keybind>
+    <keybind key="A-Tab"><action name="None" /></keybind>
+    <keybind key="S-A-Tab"><action name="None" /></keybind>
+    <keybind key="A-F10"><action name="None" /></keybind>
+  </keyboard>
+  <!-- No default mouse bindings: no root desktop menu or window gestures. -->
+  <mouse></mouse>
 </labwc_config>
 EOF
-else
-    if ! grep -q "Maximize" /config/.config/labwc/rc.xml; then
-        sed -i '/<windowRule identifier="\*"/a \      <action name="Maximize" />' /config/.config/labwc/rc.xml
-    fi
-fi
 
 labwc -c /config/.config/labwc/rc.xml > /config/state/labwc.log 2>&1 &
 LABWC_PID=$!
@@ -228,6 +237,7 @@ exec /opt/brave.com/brave-origin/brave \
     --no-first-run \
     --no-default-browser-check \
     --password-store=basic \
+    --kiosk \
     --start-maximized \
     ${GPU_FLAGS} \
     ${BRAVE_FLAGS:-} \

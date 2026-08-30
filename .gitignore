@@ -1,0 +1,19 @@
+.env
+appdata/
+config/profile/
+config/downloads/
+config/kasmvnc/
+config/state/
+*.log
+*.tmp
+*.tmp.*
+scratch/
+.agents/
+.unslop/
+
+# Local-only agent skills and internal docs
+skills/
+
+# Local-only agent/tooling files (not for distribution)
+AGENTS.md
+CLAUDE.md
