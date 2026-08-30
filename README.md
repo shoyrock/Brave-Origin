@@ -70,7 +70,7 @@ A production-grade, lightweight Docker appliance for **Brave Origin** built on *
 - **Atomic State Tracking**: Updates `/config/state/last-brave-version` only after a verified successful launch using atomic file replacement with `0600` permissions.
 - **Backup Consistency Hooks**: Includes `profile-control.sh` to cleanly flush profile databases and suspend browser operations during external filesystem backups or snapshots without stopping the container.
 - **Two-Stage Offline Updates**: Pre-downloads package archives in Stage 1 while Brave Origin is running, and installs strictly offline (`--no-download`) in Stage 2 only after downloads succeed.
-- **Locked Kiosk Session**: Brave Origin always runs in fullscreen kiosk mode (`--kiosk`) under a locked-down Labwc configuration - no titlebar, no minimize/maximize/close controls, no window switching shortcuts, and no access to the underlying desktop. The remote session is a browser, not a desktop.
+- **Locked Kiosk Session**: Brave Origin runs maximized with its full browser UI (tab strip, address bar, bookmarks bar) under a locked-down Labwc configuration - the window cannot be closed, minimized, resized, or un-maximized, there are no window-switching shortcuts, and the underlying desktop is unreachable. The remote session is a browser, not a desktop.
 - **Preserved Chromium Sandboxing**: Runs unprivileged (`braveuser`) with full Chromium user-namespace sandboxing enabled under Docker's standard security model (no `--privileged`, no `--no-sandbox`).
 
 ---

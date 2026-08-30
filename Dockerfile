@@ -120,6 +120,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     brave-origin \
     && rm -rf /var/lib/apt/lists/*
 
+# 2.5 Brave managed policy: bookmarks bar always visible in the locked session
+RUN mkdir -p /etc/brave/policies/managed && \
+    printf '%s\n' '{"BookmarkBarEnabled": true}' > /etc/brave/policies/managed/policies.json && \
+    chmod 644 /etc/brave/policies/managed/policies.json
+
 # 3. Ingest Pinned Upstream Pixelflux and pcmflux from LinuxServer, and Selkies Backend + Dashboard from 92dea42f
 COPY --from=selkies-upstream /lsiopy/lib/python3.13/site-packages/ /usr/local/lib/python3.13/dist-packages/
 COPY --from=selkies-upstream /usr/bin/selkies-desktop /usr/local/bin/selkies-desktop

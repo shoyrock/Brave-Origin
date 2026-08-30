@@ -122,18 +122,22 @@ cat << 'EOF' > /config/.config/labwc/rc.xml
     <name>Adwaita</name>
     <cornerRadius>4</cornerRadius>
   </theme>
-  <!-- Kiosk appliance policy: no decorations and no window management.
-       The browser is launched fullscreen (--kiosk) and is the only surface. -->
+  <!-- Kiosk appliance policy: the browser UI (tabs, address bar, bookmarks)
+       stays visible, but the window is always maximized and cannot be
+       closed, minimized, resized, or moved. -->
   <windowRules>
-    <windowRule identifier="*" serverDecoration="no" />
+    <windowRule identifier="*" serverDecoration="no">
+      <action name="Maximize" />
+    </windowRule>
   </windowRules>
   <!-- No default keyboard bindings: window switching, closing, and
-       maximization shortcuts are unavailable. Explicitly swallow common
-       quit/close/switch combos so the browser cannot be dismissed. -->
+       un-maximization are unavailable. Swallow the escape hatches
+       (quit, close, fullscreen toggle) so the locked window persists. -->
   <keyboard>
     <keybind key="C-q"><action name="None" /></keybind>
     <keybind key="C-S-q"><action name="None" /></keybind>
     <keybind key="A-F4"><action name="None" /></keybind>
+    <keybind key="F11"><action name="None" /></keybind>
     <keybind key="A-Tab"><action name="None" /></keybind>
     <keybind key="S-A-Tab"><action name="None" /></keybind>
     <keybind key="A-F10"><action name="None" /></keybind>
@@ -237,7 +241,6 @@ exec /opt/brave.com/brave-origin/brave \
     --no-first-run \
     --no-default-browser-check \
     --password-store=basic \
-    --kiosk \
     --start-maximized \
     ${GPU_FLAGS} \
     ${BRAVE_FLAGS:-} \
