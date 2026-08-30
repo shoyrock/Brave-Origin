@@ -206,3 +206,30 @@ jobs:
         env:
           REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
           REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+
+      - name: Publish Image to GitHub Container Registry
+        if: ${{ github.ref == 'refs/heads/main' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "========================================================"
+          echo " Publishing Container Images to GitHub Container Registry"
+          echo "========================================================"
+          GHCR_TOKEN_VAL="${GHCR_TOKEN:-}"
+          GHCR_USER="${GHCR_USERNAME:-shoyrock}"
+          GHCR_IMAGE="ghcr.io/${GHCR_USER}/brave-origin"
+          if [ -z "${GHCR_TOKEN_VAL}" ]; then
+            echo "GHCR_TOKEN secret not configured - skipping GitHub Container Registry publish."
+            exit 0
+          fi
+          printf '%s' "${GHCR_TOKEN_VAL}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
+          docker tag "${LOCAL_IMAGE}" "${GHCR_IMAGE}:wayland"
+          docker tag "${LOCAL_IMAGE}" "${GHCR_IMAGE}:latest"
+          docker tag "${LOCAL_IMAGE}" "${GHCR_IMAGE}:${{ github.sha }}"
+          docker push "${GHCR_IMAGE}:wayland"
+          docker push "${GHCR_IMAGE}:latest"
+          docker push "${GHCR_IMAGE}:${{ github.sha }}"
+          echo "Published: ${GHCR_IMAGE}:wayland, :latest and :${{ github.sha }}"
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
