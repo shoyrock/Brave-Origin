@@ -268,3 +268,5 @@ docker compose -f compose.yaml -f compose.gpu.yaml up -d
 
 This Docker deployment is provided under the [MIT License](LICENSE). Brave Origin and the Brave logo are trademarks of Brave Software, Inc. Selkies is an open-source project by the Selkies Project contributors.
 
+Brave Browser is licensed separately by Brave Software, Inc. This project is unofficial and is not affiliated with or endorsed by Brave Software, Inc.
+
