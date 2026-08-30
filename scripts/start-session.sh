@@ -194,6 +194,12 @@ echo "[start-session] Starting Brave Origin with native Wayland Ozone backend...
 rm -f /config/profile/Singleton* 2>/dev/null || true
 # Record PID for update-brave.sh Stage 2 and profile-control.sh quiesce/resume
 echo $$ > /tmp/brave.pid
+# Record the version about to use this profile (atomic write, 0600) so that
+# update-brave.sh downgrade protection compares against a real launch version
+USED_VER="$(dpkg-query -W -f='${Version}' brave-origin 2>/dev/null || echo "unknown")"
+printf '%s\n' "${USED_VER}" > "/config/state/.last-brave-version.tmp.$$"
+chmod 600 "/config/state/.last-brave-version.tmp.$$"
+mv -f "/config/state/.last-brave-version.tmp.$$" "/config/state/last-brave-version"
 exec /opt/brave.com/brave-origin/brave \
     --ozone-platform=wayland \
     --enable-features=UseOzonePlatform \
