@@ -16,9 +16,9 @@ cleanup() {
     # Terminate session and background processes
     pkill -TERM -u braveuser || true
     nginx -s stop 2>/dev/null || true
-    
-    # Release profile lock if held
-    /usr/local/bin/profile-control.sh release 2>/dev/null || true
+
+    # The profile lock (/config/state/profile.lock) is released automatically
+    # when the session processes exit
     
     # Wait up to 3 seconds for processes to exit cleanly
     sleep 2

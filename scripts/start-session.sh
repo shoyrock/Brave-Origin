@@ -35,6 +35,16 @@ if [ "${STALE_CLEANED}" = "1" ]; then
     pkill -KILL -x labwc 2>/dev/null || true
 fi
 
+# Acquire the authoritative profile lock (exclusive, non-blocking).
+# The fd stays open across `exec`, so the lock is held for the lifetime of the
+# browser session and released by the kernel when the session dies. This
+# prevents concurrent Brave instances on the same /config profile.
+exec 9>"/config/state/profile.lock"
+if ! flock -n 9; then
+    echo "[start-session] ERROR: /config/state/profile.lock is held by another Brave Origin instance on this profile!" >&2
+    exit 1
+fi
+
 # Helper function to check UNIX domain socket connectivity
 check_socket_ready() {
     local socket_path="$1"
