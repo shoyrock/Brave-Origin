@@ -12,6 +12,10 @@ PID_FILE="/tmp/brave.pid"
 STATE_DIR="/config/state"
 LAST_VERSION_FILE="${STATE_DIR}/last-brave-version"
 MIN_FREE_MB="${MIN_UPDATE_FREE_SPACE_MB:-1024}"
+# Session-visible transaction marker: start-session.sh waits for this to clear
+# before exec'ing Brave (dpkg lock files are not readable by the session user)
+UPDATE_IN_PROGRESS_MARKER="/tmp/brave-update-in-progress"
+trap 'rm -f "${UPDATE_IN_PROGRESS_MARKER}" 2>/dev/null || true' EXIT
 
 mkdir -p /run/lock "${STATE_DIR}" 2>/dev/null || true
 
@@ -184,6 +188,7 @@ if [ -n "${TARGET_VER}" ] && [ "${TARGET_VER}" != "none" ]; then
 
         echo "[updater] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Pre-download verified. All required archives are cached locally."
         set_state_atomic "UPDATING"
+        touch "${UPDATE_IN_PROGRESS_MARKER}"
 
         # ----------------------------------------------------------------------
         # STAGE 2: Gracefully stop Brave, then install strictly offline (--no-download)

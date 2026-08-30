@@ -29,20 +29,11 @@ rm -f "${XDG_RUNTIME_DIR}"/wayland-* "${XDG_RUNTIME_DIR}"/pulse/pid 2>/dev/null 
 STALE_CLEANED=0
 pkill -TERM -f "python3 -m selkies" 2>/dev/null && STALE_CLEANED=1 || true
 pkill -TERM -x labwc 2>/dev/null && STALE_CLEANED=1 || true
+pkill -TERM -f "/opt/brave.com/brave-origin/brave" 2>/dev/null && STALE_CLEANED=1 || true
 if [ "${STALE_CLEANED}" = "1" ]; then
     sleep 1
     pkill -KILL -f "python3 -m selkies" 2>/dev/null || true
     pkill -KILL -x labwc 2>/dev/null || true
-fi
-
-# Acquire the authoritative profile lock (exclusive, non-blocking).
-# The fd stays open across `exec`, so the lock is held for the lifetime of the
-# browser session and released by the kernel when the session dies. This
-# prevents concurrent Brave instances on the same /config profile.
-exec 9>"/config/state/profile.lock"
-if ! flock -n 9; then
-    echo "[start-session] ERROR: /config/state/profile.lock is held by another Brave Origin instance on this profile!" >&2
-    exit 1
 fi
 
 # Helper function to check UNIX domain socket connectivity
@@ -191,24 +182,34 @@ fi
 
 # 7. Launch Brave Origin Natively on Wayland (Direct Process Execution)
 echo "[start-session] Starting Brave Origin with native Wayland Ozone backend..."
-rm -f /config/profile/Singleton* 2>/dev/null || true
 
-# Serialize with any in-flight dpkg transaction (update-brave.sh Stage 2 offline
-# install) so Brave is not exec'd while its own package files are being replaced.
-exec 8</var/lib/dpkg/lock-frontend
-if ! flock -n 8; then
-    echo "[start-session] Waiting for in-flight package transaction to complete..."
-    ELAPSED=0
-    until flock -n 8; do
-        sleep 2
-        ELAPSED=$((ELAPSED + 2))
-        if [ "${ELAPSED}" -ge 120 ]; then
-            echo "[start-session] Warning: package transaction still active after 120s - launching anyway." >&2
-            break
-        fi
-    done
+# Serialize with any in-flight update transaction (update-brave.sh Stage 2
+# offline install) so Brave is not exec'd while its own files are replaced.
+ELAPSED=0
+while [ -f /tmp/brave-update-in-progress ]; do
+    if [ "${ELAPSED}" -eq 0 ]; then
+        echo "[start-session] Waiting for in-flight browser update to complete..."
+    fi
+    sleep 2
+    ELAPSED=$((ELAPSED + 2))
+    if [ "${ELAPSED}" -ge 120 ]; then
+        echo "[start-session] Warning: update transaction still active after 120s - launching anyway." >&2
+        break
+    fi
+done
+
+# Acquire the authoritative profile lock (exclusive, non-blocking). It is taken
+# here - after the session daemons started - so only the Brave process tree
+# inherits the lock fd; it survives `exec` and the kernel releases it when the
+# browser dies. This prevents concurrent instances on the same /config profile.
+exec 9>"/config/state/profile.lock"
+if ! flock -n 9; then
+    echo "[start-session] ERROR: /config/state/profile.lock is held by another Brave Origin instance on this profile!" >&2
+    exit 1
 fi
-exec 8>&-
+
+# Safe singleton recovery: clear stale Chromium artifacts only after the flock
+rm -f /config/profile/Singleton* 2>/dev/null || true
 
 # Record PID for update-brave.sh Stage 2 and profile-control.sh quiesce/resume
 echo $$ > /tmp/brave.pid
