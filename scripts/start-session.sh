@@ -192,6 +192,24 @@ fi
 # 7. Launch Brave Origin Natively on Wayland (Direct Process Execution)
 echo "[start-session] Starting Brave Origin with native Wayland Ozone backend..."
 rm -f /config/profile/Singleton* 2>/dev/null || true
+
+# Serialize with any in-flight dpkg transaction (update-brave.sh Stage 2 offline
+# install) so Brave is not exec'd while its own package files are being replaced.
+exec 8</var/lib/dpkg/lock-frontend
+if ! flock -n 8; then
+    echo "[start-session] Waiting for in-flight package transaction to complete..."
+    ELAPSED=0
+    until flock -n 8; do
+        sleep 2
+        ELAPSED=$((ELAPSED + 2))
+        if [ "${ELAPSED}" -ge 120 ]; then
+            echo "[start-session] Warning: package transaction still active after 120s - launching anyway." >&2
+            break
+        fi
+    done
+fi
+exec 8>&-
+
 # Record PID for update-brave.sh Stage 2 and profile-control.sh quiesce/resume
 echo $$ > /tmp/brave.pid
 # Record the version about to use this profile (atomic write, 0600) so that

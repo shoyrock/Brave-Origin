@@ -25,10 +25,11 @@ set_status_atomic() {
 get_current_status() {
     if [ -f "${QUIESCE_FLAG}" ]; then
         echo "QUIESCED"
+    elif [ -f "${PID_FILE}" ] && kill -0 "$(cat "${PID_FILE}" 2>/dev/null)" 2>/dev/null; then
+        # A live browser is authoritative: never mask it with a stale status file
+        echo "RUNNING"
     elif [ -f "${STATUS_FILE}" ]; then
         tr -d '[:space:]' < "${STATUS_FILE}"
-    elif [ -f "${PID_FILE}" ] && kill -0 "$(cat "${PID_FILE}" 2>/dev/null)" 2>/dev/null; then
-        echo "RUNNING"
     else
         echo "STARTING"
     fi

@@ -15,6 +15,42 @@ MIN_FREE_MB="${MIN_UPDATE_FREE_SPACE_MB:-1024}"
 
 mkdir -p /run/lock "${STATE_DIR}" 2>/dev/null || true
 
+# Atomic status writer (best-effort; never clobbers an active backup quiesce)
+set_state_atomic() {
+    local state="$1"
+    if [ -f "/config/state/quiesce.flag" ]; then
+        return 0
+    fi
+    local tmp="${STATE_DIR}/.status.tmp.$$"
+    printf '%s\n' "${state}" > "${tmp}" 2>/dev/null || return 0
+    chmod 644 "${tmp}" 2>/dev/null || true
+    mv -f "${tmp}" "${STATE_DIR}/status" 2>/dev/null || true
+}
+
+# Wait until a relaunched session has written a live PID to /tmp/brave.pid
+wait_for_browser() {
+    local timeout="${BRAVE_STARTUP_TIMEOUT:-15}"
+    local i bp
+    for i in $(seq 1 "${timeout}"); do
+        if [ -f "${PID_FILE}" ]; then
+            bp="$(cat "${PID_FILE}" 2>/dev/null || echo "")"
+            if [ -n "${bp}" ] && kill -0 "${bp}" 2>/dev/null; then
+                return 0
+            fi
+        fi
+        sleep 1
+    done
+    return 1
+}
+
+resume_browser_status() {
+    if wait_for_browser; then
+        set_state_atomic "RUNNING"
+    else
+        set_state_atomic "STARTING"
+    fi
+}
+
 # 1. Acquire Shared Non-Blocking Update Lock
 exec 200>"${LOCK_FILE}"
 if ! flock -n 200; then
@@ -147,6 +183,7 @@ if [ -n "${TARGET_VER}" ] && [ "${TARGET_VER}" != "none" ]; then
         fi
 
         echo "[updater] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Pre-download verified. All required archives are cached locally."
+        set_state_atomic "UPDATING"
 
         # ----------------------------------------------------------------------
         # STAGE 2: Gracefully stop Brave, then install strictly offline (--no-download)
@@ -200,6 +237,7 @@ if [ -n "${TARGET_VER}" ] && [ "${TARGET_VER}" != "none" ]; then
 
             # Signal supervisor to launch updated browser
             touch "${FLAG_RESTART}"
+            resume_browser_status
         else
             echo "[updater] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Offline install encountered error. Performing automatic recovery..."
             dpkg --configure -a >/dev/null 2>&1 || true
@@ -210,8 +248,10 @@ if [ -n "${TARGET_VER}" ] && [ "${TARGET_VER}" != "none" ]; then
             if [ "${CURRENT_BIN_VER}" != "none" ]; then
                 echo "[updater] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Package consistency restored. Relaunching version: ${CURRENT_BIN_VER}"
                 touch "${FLAG_RESTART}"
+                resume_browser_status
             else
                 echo "[updater] [$(date -u +'%Y-%m-%d %H:%M:%S UTC')] Critical: brave-origin package missing after install attempt."
+                set_state_atomic "ERROR"
                 exit 1
             fi
         fi
