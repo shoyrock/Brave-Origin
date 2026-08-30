@@ -1,0 +1,3 @@
+# Normalize all text files to LF in the working tree and repository.
+# This is a Linux/Docker project; CRLF churn from external sync tools breaks diffs and shell scripts.
+* text=auto eol=lf
