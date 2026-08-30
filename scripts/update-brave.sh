@@ -49,30 +49,32 @@ if [ -n "${LAST_USED_VER}" ]; then
     echo "[updater] [${TIMESTAMP}] Profile last recorded version: ${LAST_USED_VER}"
 fi
 
-# 4. Verify Official Brave APT Repository Configuration
-KEYRING_PATH="/usr/share/keyrings/brave-browser-archive-keyring.gpg"
-SOURCES_PATH="/etc/apt/sources.list.d/brave-browser-release.sources"
+# 4. Verify Official Brave APT Repository Configuration (paths must mirror the Dockerfile)
+KEYRING_PATH="/etc/apt/keyrings/brave-browser-archive-keyring.gpg"
+SOURCES_PATH="/etc/apt/sources.list.d/brave-browser-release.list"
 
 if [ ! -f "${KEYRING_PATH}" ]; then
     echo "[updater] [${TIMESTAMP}] Restoring official Brave archive keyring..."
+    mkdir -p /etc/apt/keyrings
     curl -fsSLo "${KEYRING_PATH}" \
         https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg 2>/dev/null || {
         echo "[updater] [${TIMESTAMP}] Warning: Unable to download Brave keyring."
     }
+    chmod 644 "${KEYRING_PATH}" 2>/dev/null || true
 fi
 
 if [ ! -f "${SOURCES_PATH}" ]; then
     echo "[updater] [${TIMESTAMP}] Restoring official Brave repository sources..."
-    curl -fsSLo "${SOURCES_PATH}" \
-        https://brave-browser-apt-release.s3.brave.com/brave-browser.sources 2>/dev/null || {
-        echo "[updater] [${TIMESTAMP}] Warning: Unable to download Brave sources file."
+    printf '%s\n' "deb [signed-by=${KEYRING_PATH} arch=amd64] https://brave-browser-apt-release.s3.brave.com/ stable main" \
+        > "${SOURCES_PATH}" 2>/dev/null || {
+        echo "[updater] [${TIMESTAMP}] Warning: Unable to write Brave sources file."
     }
 fi
 
 # 5. Refresh APT Repository Metadata
 echo "[updater] [${TIMESTAMP}] Refreshing package metadata from official Brave repository..."
 REPO_AVAILABLE=true
-if ! apt-get update -o Dir::Etc::sourcelist="sources.list.d/brave-browser-release.sources" -o Dir::Etc::sourceparts="-" -o APT::Get::List-Cleanup="0" -qq 2>/dev/null; then
+if ! apt-get update -o Dir::Etc::sourcelist="sources.list.d/brave-browser-release.list" -o Dir::Etc::sourceparts="-" -o APT::Get::List-Cleanup="0" -qq 2>/dev/null; then
     if ! apt-get update -qq 2>/dev/null; then
         echo "[updater] [${TIMESTAMP}] Warning: APT repository refresh failed (network offline or repository unreachable)."
         REPO_AVAILABLE=false

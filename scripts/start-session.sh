@@ -24,6 +24,17 @@ mkdir -p "${XDG_RUNTIME_DIR}" /config/state /config/downloads /config/profile
 chmod 700 "${XDG_RUNTIME_DIR}"
 rm -f "${XDG_RUNTIME_DIR}"/wayland-* "${XDG_RUNTIME_DIR}"/pulse/pid 2>/dev/null || true
 
+# Clean up stale session processes left over from a crashed or updated session.
+# Without this, the relaunched Selkies server cannot rebind 127.0.0.1:8082.
+STALE_CLEANED=0
+pkill -TERM -f "python3 -m selkies" 2>/dev/null && STALE_CLEANED=1 || true
+pkill -TERM -x labwc 2>/dev/null && STALE_CLEANED=1 || true
+if [ "${STALE_CLEANED}" = "1" ]; then
+    sleep 1
+    pkill -KILL -f "python3 -m selkies" 2>/dev/null || true
+    pkill -KILL -x labwc 2>/dev/null || true
+fi
+
 # Helper function to check UNIX domain socket connectivity
 check_socket_ready() {
     local socket_path="$1"
@@ -153,20 +164,26 @@ done
 export WAYLAND_DISPLAY="${LABWC_DISPLAY}"
 echo "[start-session] Labwc application Wayland socket ready: ${LABWC_SOCKET} (WAYLAND_DISPLAY=${WAYLAND_DISPLAY})"
 
-# 6. GPU Detection & Flags Configuration
+# 6. GPU Detection & Flags Configuration (ENABLE_GPU=false forces software rendering)
 GPU_FLAGS=""
-if [ -e "/dev/dri/renderD128" ]; then
+if [ "${ENABLE_GPU:-true}" = "false" ]; then
+    echo "[start-session] ENABLE_GPU=false - forcing software rasterization"
+elif [ -e "/dev/dri/renderD128" ]; then
     echo "[start-session] GPU /dev/dri/renderD128 detected - enabling hardware acceleration"
     export LIBVA_DRIVER_NAME_OVERRIDE=""
     GPU_FLAGS="--enable-gpu-rasterization --enable-zero-copy --ignore-gpu-blocklist --disable-features=Vulkan"
 else
     echo "[start-session] No /dev/dri GPU device detected - running with software rasterization"
+fi
+if [ -z "${GPU_FLAGS}" ]; then
     GPU_FLAGS="--disable-gpu --disable-gpu-compositing"
 fi
 
 # 7. Launch Brave Origin Natively on Wayland (Direct Process Execution)
 echo "[start-session] Starting Brave Origin with native Wayland Ozone backend..."
 rm -f /config/profile/Singleton* 2>/dev/null || true
+# Record PID for update-brave.sh Stage 2 and profile-control.sh quiesce/resume
+echo $$ > /tmp/brave.pid
 exec /opt/brave.com/brave-origin/brave \
     --ozone-platform=wayland \
     --enable-features=UseOzonePlatform \
@@ -178,4 +195,5 @@ exec /opt/brave.com/brave-origin/brave \
     --password-store=basic \
     --start-maximized \
     ${GPU_FLAGS} \
+    ${BRAVE_FLAGS:-} \
     "$@" >> /config/state/brave.log 2>&1

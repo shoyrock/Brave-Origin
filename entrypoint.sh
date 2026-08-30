@@ -167,7 +167,8 @@ echo " Update Interval:     ${UPDATE_INTERVAL:-21600}s"
 echo "========================================================"
 
 # 8. Launch Native Wayland Session under Unprivileged User with Profile Lock
-su - braveuser -c "ENABLE_AUDIO=${ENABLE_AUDIO:-true} /usr/local/bin/start-session.sh" >> /config/state/session.log 2>&1 &
+# NOTE: `su -` strips the environment, so session-relevant variables must be passed explicitly.
+su - braveuser -c "ENABLE_AUDIO=${ENABLE_AUDIO:-true} ENABLE_GPU=${ENABLE_GPU:-true} BRAVE_FLAGS='${BRAVE_FLAGS:-}' /usr/local/bin/start-session.sh" >> /config/state/session.log 2>&1 &
 SESSION_PID=$!
 
 # 9. Background Watchdog and Periodic Updater Loop
@@ -176,12 +177,17 @@ UPDATE_INTERVAL="${UPDATE_INTERVAL:-21600}"
 
 while true; do
     sleep 5
-    
+
     # Check if main session process has terminated unexpectedly
     if ! kill -0 "${SESSION_PID}" 2>/dev/null; then
-        echo "[watchdog] [$(date -u +"%Y-%m-%d %H:%M:%S UTC")] Session process terminated! Restarting session..."
-        su - braveuser -c "ENABLE_AUDIO=${ENABLE_AUDIO:-true} /usr/local/bin/start-session.sh" >> /config/state/session.log 2>&1 &
-        SESSION_PID=$!
+        if [ -f /config/state/quiesce.flag ]; then
+            # profile-control.sh quiesce is active (backup in progress); do not relaunch
+            echo "[watchdog] [$(date -u +"%Y-%m-%d %H:%M:%S UTC")] Session terminated but quiesce flag is set - waiting for resume."
+        else
+            echo "[watchdog] [$(date -u +"%Y-%m-%d %H:%M:%S UTC")] Session process terminated! Restarting session..."
+            su - braveuser -c "ENABLE_AUDIO=${ENABLE_AUDIO:-true} ENABLE_GPU=${ENABLE_GPU:-true} BRAVE_FLAGS='${BRAVE_FLAGS:-}' /usr/local/bin/start-session.sh" >> /config/state/session.log 2>&1 &
+            SESSION_PID=$!
+        fi
     fi
     
     # Check if Nginx proxy is running

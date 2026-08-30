@@ -117,7 +117,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxfixes3 \
     libxrandr2 \
     libasound2t64 \
-    cron \
     brave-origin \
     && rm -rf /var/lib/apt/lists/*
 
