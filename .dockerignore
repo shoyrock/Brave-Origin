@@ -6,6 +6,3 @@ config/kasmvnc/
 config/state/
 appdata/
 *.log
-scratch/
-.agents/
-.unslop/

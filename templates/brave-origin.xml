@@ -1,18 +1,18 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>Brave-Origin</Name>
-  <Repository>forgejo.foss.homes/shoy/brave-origin:wayland</Repository>
-  <Registry>https://forgejo.foss.homes/shoy/-/packages/container/brave-origin</Registry>
+  <Repository>ghcr.io/shoyrock/brave-origin:wayland</Repository>
+  <Registry>https://github.com/shoyrock/Brave-Origin/pkgs/container/brave-origin</Registry>
   <Network>bridge</Network>
   <Privileged>false</Privileged>
   <ExtraParams>--security-opt seccomp=unconfined --shm-size=1g --pids-limit 2048</ExtraParams>
 
   <Overview>Production-grade Brave Origin browser container running natively on Debian 13 Trixie Slim with Wayland, Selkies, Pixelflux, and Labwc, accessed remotely over HTTPS with hardware acceleration, profile locking, unprivileged sandboxing, and transaction-safe offline updates.</Overview>
 
-  <Project>https://forgejo.foss.homes/shoy/brave-origin</Project>
-  <Support>https://forgejo.foss.homes/shoy/brave-origin/issues</Support>
-  <TemplateURL>https://forgejo.foss.homes/shoy/brave-origin/raw/branch/main/templates/brave-origin.xml</TemplateURL>
-  <ReadMe>https://forgejo.foss.homes/shoy/brave-origin/raw/branch/main/README.md</ReadMe>
+  <Project>https://ghcr.io/shoyrock/brave-origin</Project>
+  <Support>https://ghcr.io/shoyrock/brave-origin/issues</Support>
+  <TemplateURL>https://ghcr.io/shoyrock/brave-origin/raw/branch/main/templates/brave-origin.xml</TemplateURL>
+  <ReadMe>https://ghcr.io/shoyrock/brave-origin/raw/branch/main/README.md</ReadMe>
 
   <Category>Productivity: Tools:Utilities</Category>
   <ExtraSearchTerms>brave browser wayland selkies remote web ozone</ExtraSearchTerms>

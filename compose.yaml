@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ${IMAGE_NAME:-forgejo.foss.homes/shoy/brave-origin:wayland}
+    image: ${IMAGE_NAME:-ghcr.io/shoyrock/brave-origin:wayland}
     container_name: brave-origin
     hostname: ${CONTAINER_HOSTNAME:-brave-origin}
     restart: unless-stopped

@@ -101,7 +101,7 @@ A production-grade, lightweight Docker appliance for **Brave Origin** built on *
 ```yaml
 services:
   brave-origin:
-    image: forgejo.foss.homes/shoy/brave-origin:wayland
+    image: ghcr.io/shoyrock/brave-origin:wayland
     container_name: brave-origin
     hostname: brave-origin
     restart: unless-stopped
@@ -140,7 +140,7 @@ docker run -d \
   -e AUTO_UPDATE=true \
   -e ENABLE_AUDIO=true \
   -v /mnt/user/appdata/brave-origin:/config \
-  forgejo.foss.homes/shoy/brave-origin:wayland
+  ghcr.io/shoyrock/brave-origin:wayland
 ```
 
 ---
