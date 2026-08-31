@@ -224,6 +224,14 @@ fi
 # Safe singleton recovery: clear stale Chromium artifacts only after the flock
 rm -f /config/profile/Singleton* 2>/dev/null || true
 
+# Skip Brave Origin's one-time welcome modal on fresh profiles: it takes over
+# the whole window and hides the browser chrome until dismissed. Seeding the
+# dismissal pref before first launch makes a brand-new /config start directly
+# in the usable browser.
+if [ ! -f "/config/profile/Local State" ]; then
+    printf '%s\n' '{"brave":{"has_seen_brave_welcome_page":true}}' > "/config/profile/Local State"
+fi
+
 # Record PID for update-brave.sh Stage 2 and profile-control.sh quiesce/resume
 echo $$ > /tmp/brave.pid
 # Record the version about to use this profile (atomic write, 0600) so that
