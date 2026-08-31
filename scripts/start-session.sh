@@ -116,36 +116,22 @@ mkdir -p /config/.config/labwc
 # Kiosk lockdown: the canonical rc.xml is rewritten on every start so a
 # persisted config can never re-enable window management or desktop access.
 #
-# Decorations strategy: the compositor claims server-side decorations for
-# every window (serverDecoration="yes" at first map), which stops Brave from
-# drawing its own client-side close/minimize/maximize buttons in the tab
-# strip. Labwc's own titlebar is rendered inert: an empty button layout, no
-# window title text, and zero-height padding via the kiosk themerc, so the
-# server decoration exists but offers no window operations.
+# NOTE: server-side decorations are deliberately NOT used. A compositor
+# titlebar (even an inert one) reserves a visible strip of screen space at
+# the top of the display, which was rejected. Brave therefore draws its own
+# client-side window buttons again; the compositor still force-maximizes
+# every window on map and blocks all window-management input paths.
 cat << 'EOF' > /config/.config/labwc/rc.xml
 <?xml version="1.0"?>
 <labwc_config>
   <theme>
-    <name>kiosk</name>
+    <name>Adwaita</name>
     <cornerRadius>4</cornerRadius>
-    <titlebar>
-      <layout>:</layout>
-      <showTitle>no</showTitle>
-    </titlebar>
-    <font place="ActiveWindow">
-      <name>sans</name>
-      <size>1</size>
-    </font>
-    <font place="InactiveWindow">
-      <name>sans</name>
-      <size>1</size>
-    </font>
   </theme>
   <!-- Kiosk appliance policy: the browser UI (tabs, address bar, bookmarks)
-       stays visible, but the window is always maximized and cannot be
-       closed, minimized, resized, or moved. -->
+       stays visible and every window opens maximized. -->
   <windowRules>
-    <windowRule identifier="*" serverDecoration="yes">
+    <windowRule identifier="*" serverDecoration="no">
       <action name="Maximize" />
     </windowRule>
   </windowRules>
@@ -163,37 +149,10 @@ cat << 'EOF' > /config/.config/labwc/rc.xml
     <keybind key="S-A-Tab"><action name="None" /></keybind>
     <keybind key="A-F10"><action name="None" /></keybind>
   </keyboard>
-  <!-- Titlebar gestures are inert: no move/drag or maximize toggle. -->
-  <mouse>
-    <context name="TitleBar">
-      <mousebind button="Left" action="Click"><action name="None" /></mousebind>
-      <mousebind button="Left" action="DoubleClick"><action name="None" /></mousebind>
-      <mousebind button="Middle" action="DoubleClick"><action name="None" /></mousebind>
-    </context>
-  </mouse>
+  <!-- No default mouse bindings: no root desktop menu or window gestures. -->
+  <mouse></mouse>
 </labwc_config>
 EOF
-
-# Kiosk themerc (correct labwc search path: themes/<name>/labwc/). The
-# titlebar is collapsed to zero height; if the compositor still reserves any
-# space, the white background blends seamlessly into Brave's tab strip so no
-# gap is visible.
-for THEME_DIR in "${HOME}/.local/share/themes/kiosk/labwc" "${HOME}/.themes/kiosk/labwc"; do
-    mkdir -p "${THEME_DIR}"
-    cat << 'EOF' > "${THEME_DIR}/labwc-themerc"
-# Kiosk theme: no visible window decoration
-titlebar.height: 0
-window.titlebar.padding.width: 0
-window.titlebar.padding.height: 0
-window.button.width: 1
-window.button.height: 1
-border.width: 0
-padding.height: 0
-titlebar.bg.color: #ffffff
-titlebar.bg.color.unfocused: #ffffff
-titlebar.text.color: #ffffff
-EOF
-done
 
 labwc -c /config/.config/labwc/rc.xml > /config/state/labwc.log 2>&1 &
 LABWC_PID=$!
@@ -280,22 +239,19 @@ if [ ! -f "/config/profile/Local State" ]; then
     printf '%s\n' '{"brave":{"has_seen_brave_welcome_page":true}}' > "/config/profile/Local State"
 fi
 
-# Window-button lockdown: force Chromium to use the compositor's (inert,
-# buttonless) server-side titlebar instead of drawing its own close/minimize/
-# maximize buttons inside the tab strip. Applied to fresh profiles via the
-# seed below and re-asserted on every start for existing profiles.
-if [ ! -f "/config/profile/Default/Preferences" ]; then
-    mkdir -p /config/profile/Default
-    printf '%s\n' '{"browser":{"custom_chrome_frame":false}}' > "/config/profile/Default/Preferences"
-else
-    python3 - << 'EOF'
+# Restore Brave's native client-side window frame. A previous image version
+# forced browser.custom_chrome_frame=false (system titlebar mode), which left
+# a permanent strip of reserved space at the top of the display; profiles
+# touched by it are cleaned up here on every start.
+if [ -f "/config/profile/Default/Preferences" ]; then
+    python3 - << 'EOF' || true
 import json
 p = "/config/profile/Default/Preferences"
 try:
     with open(p) as f:
         d = json.load(f)
-    if d.get("browser", {}).get("custom_chrome_frame") is not False:
-        d.setdefault("browser", {})["custom_chrome_frame"] = False
+    if d.get("browser", {}).get("custom_chrome_frame") is not True:
+        d.setdefault("browser", {})["custom_chrome_frame"] = True
         with open(p, "w") as f:
             json.dump(d, f)
 except Exception:
@@ -313,7 +269,7 @@ chmod 600 "/config/state/.last-brave-version.tmp.$$"
 mv -f "/config/state/.last-brave-version.tmp.$$" "/config/state/last-brave-version"
 exec /opt/brave.com/brave-origin/brave \
     --ozone-platform=wayland \
-    --enable-features=UseOzonePlatform,ShowWindowTitleBar \
+    --enable-features=UseOzonePlatform \
     --user-data-dir=/config/profile \
     --disk-cache-dir=/tmp/brave-cache \
     --default-download-directory=/config/downloads \
