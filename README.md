@@ -77,9 +77,9 @@ A production-grade, lightweight Docker appliance for **Brave Origin** built on *
 
 ## Known Limitations & Security Notes
 
-> [!WARNING]
-> **Clipboard Status: UNRESOLVED (Intentionally Deferred)**  
-> Seamless bidirectional clipboard synchronization between client browsers and the remote Wayland desktop is currently unresolved and intentionally deferred. Native text clipboard operations (`Ctrl+C` / `Ctrl+V`) across different client browsers are not guaranteed to function reliably in this version. This is a recognized known limitation, not a release claim.
+> [!NOTE]
+> **Clipboard Synchronization**:  
+> Bidirectional text clipboard sync between the client browser and the remote session is enabled. Copying inside the remote Brave (Ctrl+C) is delivered to the client, and copying on the client machine is applied to the remote session when the session page regains focus (the client pushes on focus; browsers gate host-clipboard writes on focus and permission). Text is synced in both directions; the server additionally supports image clipboard when enabled.
 
 > [!NOTE]
 > **Docker Seccomp Profile**:  
