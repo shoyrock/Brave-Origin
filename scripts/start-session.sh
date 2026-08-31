@@ -115,37 +115,79 @@ echo "[start-session] Starting Labwc window manager on root display ${WAYLAND_DI
 mkdir -p /config/.config/labwc
 # Kiosk lockdown: the canonical rc.xml is rewritten on every start so a
 # persisted config can never re-enable window management or desktop access.
+#
+# Decorations strategy: the compositor claims server-side decorations for
+# every window (serverDecoration="yes" at first map), which stops Brave from
+# drawing its own client-side close/minimize/maximize buttons in the tab
+# strip. Labwc's own titlebar is rendered inert: an empty button layout, no
+# window title text, and zero-height padding via the kiosk themerc, so the
+# server decoration exists but offers no window operations.
 cat << 'EOF' > /config/.config/labwc/rc.xml
 <?xml version="1.0"?>
 <labwc_config>
   <theme>
-    <name>Adwaita</name>
+    <name>kiosk</name>
     <cornerRadius>4</cornerRadius>
+    <titlebar>
+      <layout>:</layout>
+      <showTitle>no</showTitle>
+    </titlebar>
+    <font place="ActiveWindow">
+      <name>sans</name>
+      <size>1</size>
+    </font>
+    <font place="InactiveWindow">
+      <name>sans</name>
+      <size>1</size>
+    </font>
   </theme>
   <!-- Kiosk appliance policy: the browser UI (tabs, address bar, bookmarks)
        stays visible, but the window is always maximized and cannot be
        closed, minimized, resized, or moved. -->
   <windowRules>
-    <windowRule identifier="*" serverDecoration="no">
+    <windowRule identifier="*" serverDecoration="yes">
       <action name="Maximize" />
     </windowRule>
   </windowRules>
   <!-- No default keyboard bindings: window switching, closing, and
        un-maximization are unavailable. Swallow the escape hatches
-       (quit, close, fullscreen toggle) so the locked window persists. -->
+       (quit, close window/tab, fullscreen toggle). -->
   <keyboard>
     <keybind key="C-q"><action name="None" /></keybind>
     <keybind key="C-S-q"><action name="None" /></keybind>
+    <keybind key="C-w"><action name="None" /></keybind>
+    <keybind key="C-S-w"><action name="None" /></keybind>
     <keybind key="A-F4"><action name="None" /></keybind>
     <keybind key="F11"><action name="None" /></keybind>
     <keybind key="A-Tab"><action name="None" /></keybind>
     <keybind key="S-A-Tab"><action name="None" /></keybind>
     <keybind key="A-F10"><action name="None" /></keybind>
   </keyboard>
-  <!-- No default mouse bindings: no root desktop menu or window gestures. -->
-  <mouse></mouse>
+  <!-- Titlebar gestures are inert: no move/drag or maximize toggle. -->
+  <mouse>
+    <context name="TitleBar">
+      <mousebind button="Left" action="Click"><action name="None" /></mousebind>
+      <mousebind button="Left" action="DoubleClick"><action name="None" /></mousebind>
+      <mousebind button="Middle" action="DoubleClick"><action name="None" /></mousebind>
+    </context>
+  </mouse>
 </labwc_config>
 EOF
+
+# Kiosk themerc (correct labwc search path: themes/<name>/labwc/). Zero
+# padding and borders collapse the inert server-side titlebar to nothing.
+for THEME_DIR in "${HOME}/.local/share/themes/kiosk/labwc" "${HOME}/.themes/kiosk/labwc"; do
+    mkdir -p "${THEME_DIR}"
+    cat << 'EOF' > "${THEME_DIR}/labwc-themerc"
+# Kiosk theme: the server-side titlebar occupies no visible space
+window.titlebar.padding.width: 0
+window.titlebar.padding.height: 0
+window.button.width: 1
+window.button.height: 1
+border.width: 0
+padding.height: 0
+EOF
+done
 
 labwc -c /config/.config/labwc/rc.xml > /config/state/labwc.log 2>&1 &
 LABWC_PID=$!
@@ -232,6 +274,29 @@ if [ ! -f "/config/profile/Local State" ]; then
     printf '%s\n' '{"brave":{"has_seen_brave_welcome_page":true}}' > "/config/profile/Local State"
 fi
 
+# Window-button lockdown: force Chromium to use the compositor's (inert,
+# buttonless) server-side titlebar instead of drawing its own close/minimize/
+# maximize buttons inside the tab strip. Applied to fresh profiles via the
+# seed below and re-asserted on every start for existing profiles.
+if [ ! -f "/config/profile/Default/Preferences" ]; then
+    mkdir -p /config/profile/Default
+    printf '%s\n' '{"browser":{"custom_chrome_frame":false}}' > "/config/profile/Default/Preferences"
+else
+    python3 - << 'EOF'
+import json
+p = "/config/profile/Default/Preferences"
+try:
+    with open(p) as f:
+        d = json.load(f)
+    if d.get("browser", {}).get("custom_chrome_frame") is not False:
+        d.setdefault("browser", {})["custom_chrome_frame"] = False
+        with open(p, "w") as f:
+            json.dump(d, f)
+except Exception:
+    pass
+EOF
+fi
+
 # Record PID for update-brave.sh Stage 2 and profile-control.sh quiesce/resume
 echo $$ > /tmp/brave.pid
 # Record the version about to use this profile (atomic write, 0600) so that
@@ -242,7 +307,7 @@ chmod 600 "/config/state/.last-brave-version.tmp.$$"
 mv -f "/config/state/.last-brave-version.tmp.$$" "/config/state/last-brave-version"
 exec /opt/brave.com/brave-origin/brave \
     --ozone-platform=wayland \
-    --enable-features=UseOzonePlatform \
+    --enable-features=UseOzonePlatform,ShowWindowTitleBar \
     --user-data-dir=/config/profile \
     --disk-cache-dir=/tmp/brave-cache \
     --default-download-directory=/config/downloads \

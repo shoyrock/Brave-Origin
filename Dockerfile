@@ -134,6 +134,8 @@ COPY --from=selkies-build /selkies-src /tmp/selkies-src
 RUN pip install --no-deps /tmp/selkies-src --break-system-packages && \
     mkdir -p /usr/share/selkies/web && \
     cp -r /tmp/selkies-src/addons/selkies-dashboard/dist/* /usr/share/selkies/web/ && \
+    cp /opt/brave.com/brave-origin/product_logo_256.png /usr/share/selkies/web/icon.png && \
+    cp /opt/brave.com/brave-origin/product_logo_256.png /usr/share/selkies/web/icon-512.png && \
     rm -rf /tmp/selkies-src /root/.cache
 
 # 4. Create Unprivileged Non-Root User (braveuser)
