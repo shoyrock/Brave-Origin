@@ -174,18 +174,24 @@ cat << 'EOF' > /config/.config/labwc/rc.xml
 </labwc_config>
 EOF
 
-# Kiosk themerc (correct labwc search path: themes/<name>/labwc/). Zero
-# padding and borders collapse the inert server-side titlebar to nothing.
+# Kiosk themerc (correct labwc search path: themes/<name>/labwc/). The
+# titlebar is collapsed to zero height; if the compositor still reserves any
+# space, the white background blends seamlessly into Brave's tab strip so no
+# gap is visible.
 for THEME_DIR in "${HOME}/.local/share/themes/kiosk/labwc" "${HOME}/.themes/kiosk/labwc"; do
     mkdir -p "${THEME_DIR}"
     cat << 'EOF' > "${THEME_DIR}/labwc-themerc"
-# Kiosk theme: the server-side titlebar occupies no visible space
+# Kiosk theme: no visible window decoration
+titlebar.height: 0
 window.titlebar.padding.width: 0
 window.titlebar.padding.height: 0
 window.button.width: 1
 window.button.height: 1
 border.width: 0
 padding.height: 0
+titlebar.bg.color: #ffffff
+titlebar.bg.color.unfocused: #ffffff
+titlebar.text.color: #ffffff
 EOF
 done
 
