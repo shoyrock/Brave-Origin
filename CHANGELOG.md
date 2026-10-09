@@ -1,5 +1,9 @@
 # Release notes
 
+## Unreleased
+
+- Fixed startup on hosts without IPv6: the web proxy now listens on IPv4 only when the kernel has no IPv6 support instead of stopping the container.
+
 ## 1.0.1-beta.2
 
 - Brave now stays maximized when you click minimize or restore, or drag the window.

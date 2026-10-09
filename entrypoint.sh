@@ -178,6 +178,13 @@ fi
 
 # 7. Start Nginx Ingress Proxy
 echo "[nginx] [$(date -u +"%Y-%m-%d %H:%M:%S UTC")] Initializing Single-Origin TLS Reverse Proxy on port 8443..."
+# Hosts without IPv6 (disabled kernels, IPv4-only runtimes) must still start.
+rm -f /etc/nginx/conf.d/listen-ipv6.conf
+if python3 -c 'import socket; socket.socket(socket.AF_INET6).bind(("::", 0))' 2>/dev/null; then
+    echo 'listen [::]:8443 ssl default_server;' > /etc/nginx/conf.d/listen-ipv6.conf
+else
+    echo "[nginx] [$(date -u +"%Y-%m-%d %H:%M:%S UTC")] IPv6 is unavailable; listening on IPv4 only."
+fi
 nginx -t >/dev/null 2>&1 || nginx -t
 nginx
 
