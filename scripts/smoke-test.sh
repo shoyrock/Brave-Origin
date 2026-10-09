@@ -20,6 +20,9 @@ trap cleanup EXIT
 wait_ready() {
     for ((i=0; i<60; i++)); do
         if docker exec "$name" bash /usr/local/bin/healthcheck.sh >/dev/null 2>&1; then return; fi
+        if [ "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null)" != true ]; then
+            echo 'Container exited before becoming ready.' >&2; return 1
+        fi
         sleep 1
     done
     echo 'Container did not become ready.' >&2; return 1
