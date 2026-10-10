@@ -6,7 +6,7 @@
   <Icon>https://cdn.store.brave.com/27288513509c0d1081560c3cd499ad127b8e59fafbc40a2fc6025b79b024d4c7.png</Icon>
   <Network>bridge</Network>
   <Privileged>false</Privileged>
-  <ExtraParams>--security-opt seccomp=unconfined --security-opt no-new-privileges=true --shm-size=1g --pids-limit 2048</ExtraParams>
+  <ExtraParams>--security-opt seccomp=unconfined --security-opt no-new-privileges=true --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add SETGID --cap-add SETUID --cap-add KILL --shm-size=1g --pids-limit 2048</ExtraParams>
   <Overview>Run Brave Origin in your web browser over HTTPS. Choose Wayland stable (default), Wayland beta, X11 stable, or X11 beta when installing through Apps. Saves bookmarks, settings, and downloads. Includes password protection, copy and paste, audio, and automatic browser updates.</Overview>
   <Project>https://github.com/shoyrock/Brave-Origin</Project>
   <Support>https://github.com/shoyrock/Brave-Origin/issues</Support>

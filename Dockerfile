@@ -27,7 +27,8 @@ RUN cd /selkies-src && \
     cp -r /selkies-src/src /selkies-package/ && \
     rm -rf /selkies-src/.git /selkies-src/patches
 
-# Build only the window manager; Brave remains the official, unmodified package.
+# Build both window managers from the same pinned source; Brave remains the official,
+# unmodified package. Debian's labwc package is not used because it depends on Xwayland.
 FROM debian:trixie-slim AS labwc-build
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential meson ninja-build pkg-config patch xz-utils ca-certificates \
@@ -40,11 +41,18 @@ RUN mkdir /labwc && tar -xzf /tmp/labwc.tar.gz -C /labwc --strip-components=1 &&
 COPY patches/labwc/lock-maximized.patch /tmp/lock-maximized.patch
 COPY patches/labwc/README.md /labwc/BRAVE-ORIGIN-CHANGES.md
 COPY Dockerfile /labwc/Brave-Origin.Dockerfile
-RUN cd /labwc && patch -p1 < /tmp/lock-maximized.patch && \
-    meson setup /labwc-build --buildtype=release --wrap-mode=nofallback \
+# Stock binary first (BROWSER_LOCK_MAXIMIZED=false), then the maximization policy.
+RUN cd /labwc && \
+    set -- --buildtype=release --wrap-mode=nofallback \
         -Dxwayland=disabled -Dicon=disabled -Dman-pages=disabled -Dtest=enabled \
         -Db_pie=true -Db_lto=true -Dc_args='-fstack-protector-strong -D_FORTIFY_SOURCE=3' \
         -Dc_link_args='-Wl,-z,relro,-z,now' && \
+    meson setup /labwc-stock-build "$@" && \
+    meson compile -C /labwc-stock-build -j 2 && meson test -C /labwc-stock-build --print-errorlogs && \
+    strip /labwc-stock-build/labwc && \
+    cp /tmp/lock-maximized.patch /labwc/BRAVE-ORIGIN-lock-maximized.patch && \
+    patch -p1 < /tmp/lock-maximized.patch && \
+    meson setup /labwc-build "$@" && \
     meson compile -C /labwc-build -j 2 && meson test -C /labwc-build --print-errorlogs && \
     strip /labwc-build/labwc && tar -cJf /labwc-source.tar.xz -C / labwc
 
@@ -70,7 +78,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PULSE_SERVER=unix:/tmp/runtime-braveuser/pulse/native
 
 # 1. Add Official Brave Origin Apt Repository (Release Channel)
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gnupg && \
+# apt verifies signatures with sqv; gnupg is not needed to install a binary keyring.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && \
     install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg \
     -o /etc/apt/keyrings/brave-browser-archive-keyring.gpg && \
@@ -80,7 +89,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     rm -rf /var/lib/apt/lists/*
 
 # 2. Base Utilities, Wayland Compositor, Audio, Graphics, Python & Brave Origin
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Apply pending Debian security updates to the base image before adding packages.
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     procps \
@@ -91,8 +101,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pulseaudio \
     pulseaudio-utils \
     dbus \
-    labwc \
     libwlroots-0.18 \
+    libglib2.0-0t64 \
+    libpng16-16t64 \
+    librsvg2-2 \
+    libxml2 \
     wtype \
     wl-clipboard \
     wayland-protocols \
@@ -182,8 +195,15 @@ RUN groupadd -r render 2>/dev/null || true && \
     chmod 700 /tmp/runtime-braveuser && \
     chown -R braveuser:braveuser /config /tmp/runtime-braveuser /tmp/brave-cache
 
+# 4.5 Nothing in this image escalates through setuid programs or file capabilities.
+# Brave's own sandbox helper is kept so the browser still starts on hosts without
+# unprivileged user namespaces; no-new-privileges neutralizes it where set.
+RUN find / -xdev -type f -perm /6000 ! -path /opt/brave.com/brave-origin/chrome-sandbox -exec chmod a-s {} + && \
+    getcap -r / 2>/dev/null | cut -d' ' -f1 | xargs -r -n1 setcap -r
+
 # 5. Copy Configuration and Session Scripts
 COPY --from=labwc-build /labwc-build/labwc /usr/local/bin/labwc-browser
+COPY --from=labwc-build /labwc-stock-build/labwc /usr/local/bin/labwc
 # Corresponding GPL source accompanies the modified compositor binary.
 COPY --from=labwc-build /labwc-source.tar.xz /usr/local/share/brave-origin/labwc-source.tar.xz
 COPY config/nginx.conf /etc/nginx/nginx.conf

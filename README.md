@@ -90,6 +90,7 @@ Set these values in `.env`, the Unraid template, or your container's environment
 | `AUTH_USER` | `brave` | Initial login username. |
 | `AUTH_PASSWORD` | Empty | Initial password; required unless a password file or saved credentials exist. |
 | `AUTH_PASSWORD_FILE` | Empty | Path inside the container to a mounted password file. |
+| `HSTS_ENABLED` | `false` | Send `Strict-Transport-Security`. Enable only when this hostname serves nothing over plain HTTP on any port, because browsers apply HSTS to the whole hostname. |
 | `AUTO_UPDATE` | `true` | Update the browser inside the running container. |
 | `UPDATE_INTERVAL` | `21600` | Seconds between update checks (six hours). |
 | `MIN_UPDATE_FREE_SPACE_MB` | `1024` | Free disk space required before downloading an update. |
@@ -109,7 +110,7 @@ Automatic resizing follows the available browser window, including changes when 
 
 Starting with `1.0.1-beta.2`, Brave stays maximized: minimize, restore, and window dragging cannot take it off screen or make it smaller. Its title-bar buttons remain visible. Tabs, the address bar, and automatic display resizing continue to work. Set `BROWSER_LOCK_MAXIMIZED=false` and recreate the container to restore the previous window controls. In Unraid, this is **Keep Browser Maximized**.
 
-This behavior belongs to the container's window manager. Brave remains the official, unmodified package and can receive browser updates independently. The image includes the modified Labwc 0.8.3 source at `/usr/local/share/brave-origin/labwc-source.tar.xz`; its build recipe is in `Dockerfile` and its changes are in `patches/labwc/lock-maximized.patch`.
+This behavior belongs to the container's window manager. Brave remains the official, unmodified package and can receive browser updates independently. Both window manager binaries are built from the pinned Labwc 0.8.3 source without Xwayland; the image includes that source, with the modification, at `/usr/local/share/brave-origin/labwc-source.tar.xz`. Its build recipe is in `Dockerfile` and its changes are in `patches/labwc/lock-maximized.patch`.
 
 The older `KASM_AUTH_ENABLED`, `KASM_USER`, `KASM_PASSWORD`, and `KASM_PASSWORD_FILE` names remain accepted. The corresponding `AUTH_*` setting takes precedence.
 
@@ -173,6 +174,8 @@ The first stable container release is `1.0.0`. Back up appdata before moving fro
 The web session provides access to the browser profile and downloaded files. Keep it behind a trusted network, VPN, or authenticated proxy. Login protection is enabled by default. A reverse proxy must preserve the original `Host` header, including a nonstandard port. Requests from unrelated website origins are rejected.
 
 Brave runs as `braveuser` with its Chromium sandbox enabled. The supplied configuration uses `seccomp:unconfined` so the browser can create user namespaces; this disables Docker's syscall filter for this container. The host must permit unprivileged user namespaces. `no-new-privileges` prevents child processes from gaining permissions through setuid programs. Do not add `--no-sandbox`, privileged mode, or `SYS_ADMIN`.
+
+The supplied Compose file and Unraid template also drop every Linux capability except the few that startup, nginx, and browser updates need (`CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `SETGID`, `SETUID`, `KILL`) and limit the container to 2048 processes. Inside the image, setuid bits and file capabilities are removed from everything except Brave's own sandbox helper. Rejected logins are delayed by one second, each client is limited to 20 page requests per second with a burst of 50, and responses carry `X-Frame-Options`, `Referrer-Policy`, and `X-Content-Type-Options` headers in addition to the frame-ancestors policy. `HSTS_ENABLED=true` adds `Strict-Transport-Security` when the hostname is dedicated to this container. If you run the container with your own `docker run` command, copy these options from `compose.yaml`.
 
 To use your own TLS certificate, place its certificate chain at `/config/ssl/cert.pem` and its private key at `/config/ssl/cert.key`, then restart the container. A simple nginx reload does not copy newly supplied files into place.
 

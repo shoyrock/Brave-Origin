@@ -11,11 +11,13 @@ Fullscreen, output resizing, client-side decorations, dialogs, and popups use
 the existing upstream implementation. This is a window policy, not a security
 boundary or a restriction on closing tabs or the browser.
 
-`labwc-browser` is built separately from the stock Debian `labwc` package;
-`BROWSER_LOCK_MAXIMIZED=false` selects the stock binary. Brave is not patched.
-The build disables unused XWayland and window-icon support, enables compiler
-hardening, and runs upstream tests. No build tools enter the final image.
+Both `labwc-browser` and the stock `labwc` used by `BROWSER_LOCK_MAXIMIZED=false`
+are built from the same pinned source; Debian's `labwc` package is not installed
+because it depends on Xwayland. Brave is not patched. The build disables unused
+XWayland and window-icon support, enables compiler hardening, and runs upstream
+tests for both binaries. No build tools enter the final image.
 
-The complete modified Labwc source, its license, and the Dockerfile build recipe
-are shipped in `/usr/local/share/brave-origin/labwc-source.tar.xz`. The patch in
-this directory and the Dockerfile reproduce those sources and the binary.
+The complete modified Labwc source, the applied patch, its license, and the
+Dockerfile build recipe are shipped in `/usr/local/share/brave-origin/labwc-source.tar.xz`.
+Reversing the included patch yields the stock sources; the Dockerfile reproduces
+both binaries.

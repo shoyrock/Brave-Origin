@@ -12,6 +12,17 @@ services:
     security_opt:
       - seccomp:unconfined
       - no-new-privileges:true
+    # Root inside the container keeps only what startup, nginx, and browser updates use.
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+      - KILL
+    pids_limit: 2048
     ports:
       # Container always listens on 8443 (nginx.conf); WEB_PORT only selects the host-side port.
       - "${WEB_PORT:-8443}:8443"
@@ -28,6 +39,7 @@ services:
       - AUTH_USER=${AUTH_USER:-${KASM_USER:-brave}}
       - AUTH_PASSWORD=${AUTH_PASSWORD:-${KASM_PASSWORD:-}}
       - AUTH_PASSWORD_FILE=${AUTH_PASSWORD_FILE:-${KASM_PASSWORD_FILE:-}}
+      - HSTS_ENABLED=${HSTS_ENABLED:-false}
       - AUTO_UPDATE=${AUTO_UPDATE:-true}
       - UPDATE_INTERVAL=${UPDATE_INTERVAL:-21600}
       - DOWNGRADE_RETRY_INTERVAL=${DOWNGRADE_RETRY_INTERVAL:-300}
