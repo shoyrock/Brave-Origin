@@ -1,5 +1,9 @@
 # Release notes
 
+## Unreleased
+
+- Fixed startup on hosts without IPv6: the web proxy now listens on IPv4 only when the kernel has no IPv6 support instead of stopping the container.
+
 ## X11 1.0.0
 
 First stable X11 edition for users who prefer KasmVNC.
