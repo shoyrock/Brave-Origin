@@ -2,6 +2,7 @@
 
 ## Unreleased security updates
 
+- Fixed startup on hosts without IPv6: the web proxy now listens on IPv4 only when the kernel has no IPv6 support instead of stopping the container.
 - Improved protection for saved browser data, login details, and certificates.
 - Blocked remote-session requests from unrelated websites.
 - Added security checks before publishing images.
