@@ -70,7 +70,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PULSE_SERVER=unix:/tmp/runtime-braveuser/pulse/native
 
 # 1. Add Official Brave Origin Apt Repository (Release Channel)
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gnupg && \
+# apt verifies signatures with sqv; gnupg is not needed to install a binary keyring.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && \
     install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg \
     -o /etc/apt/keyrings/brave-browser-archive-keyring.gpg && \
@@ -80,7 +81,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     rm -rf /var/lib/apt/lists/*
 
 # 2. Base Utilities, Wayland Compositor, Audio, Graphics, Python & Brave Origin
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Apply pending Debian security updates to the base image before adding packages.
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     procps \
@@ -181,6 +183,12 @@ RUN groupadd -r render 2>/dev/null || true && \
     mkdir -p /config /tmp/runtime-braveuser /tmp/brave-cache /etc/nginx/ssl /usr/share/selkies/web && \
     chmod 700 /tmp/runtime-braveuser && \
     chown -R braveuser:braveuser /config /tmp/runtime-braveuser /tmp/brave-cache
+
+# 4.5 Nothing in this image escalates through setuid programs or file capabilities.
+# Brave's own sandbox helper is kept so the browser still starts on hosts without
+# unprivileged user namespaces; no-new-privileges neutralizes it where set.
+RUN find / -xdev -type f -perm /6000 ! -path /opt/brave.com/brave-origin/chrome-sandbox -exec chmod a-s {} + && \
+    getcap -r / 2>/dev/null | cut -d' ' -f1 | xargs -r -n1 setcap -r
 
 # 5. Copy Configuration and Session Scripts
 COPY --from=labwc-build /labwc-build/labwc /usr/local/bin/labwc-browser

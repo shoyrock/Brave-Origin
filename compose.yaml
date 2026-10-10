@@ -12,6 +12,17 @@ services:
     security_opt:
       - seccomp:unconfined
       - no-new-privileges:true
+    # Root inside the container keeps only what startup, nginx, and browser updates use.
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+      - KILL
+    pids_limit: 2048
     ports:
       # Container always listens on 8443 (nginx.conf); WEB_PORT only selects the host-side port.
       - "${WEB_PORT:-8443}:8443"

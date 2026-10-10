@@ -9,6 +9,7 @@ Report suspected vulnerabilities privately through [GitHub security reporting](h
 - Keep the Docker host, kernel, and container image updated. Automatic Brave updates do not update the rest of the image.
 - Give each container its own appdata folder. Back up a stopped or quiesced profile, and restrict access to backups: they contain browsing data, saved passwords, and session cookies.
 - Keep Chromium sandboxing and `no-new-privileges` enabled. The supplied configuration allows user namespaces using `seccomp:unconfined`; Docker's syscall filter is therefore disabled for this container. Do not grant privileged mode, `SYS_ADMIN`, or access to the Docker socket.
+- Keep the capability allowlist and process limit from `compose.yaml` or the Unraid template when writing your own `docker run` command. The image contains no setuid programs or file capabilities other than Brave's sandbox helper.
 - Let startup manage appdata permissions. The mount root, credentials, certificates, and lifetime locks are protected from the browser account. Do not recursively change ownership of the whole appdata folder or use symlinks for these protected paths.
 
 ## Release checks

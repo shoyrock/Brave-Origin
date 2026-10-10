@@ -174,6 +174,8 @@ The web session provides access to the browser profile and downloaded files. Kee
 
 Brave runs as `braveuser` with its Chromium sandbox enabled. The supplied configuration uses `seccomp:unconfined` so the browser can create user namespaces; this disables Docker's syscall filter for this container. The host must permit unprivileged user namespaces. `no-new-privileges` prevents child processes from gaining permissions through setuid programs. Do not add `--no-sandbox`, privileged mode, or `SYS_ADMIN`.
 
+The supplied Compose file and Unraid template also drop every Linux capability except the few that startup, nginx, and browser updates need (`CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `SETGID`, `SETUID`, `KILL`) and limit the container to 2048 processes. Inside the image, setuid bits and file capabilities are removed from everything except Brave's own sandbox helper. Rejected logins are delayed by one second, and responses carry `X-Frame-Options`, `Referrer-Policy`, and `X-Content-Type-Options` headers in addition to the frame-ancestors policy. If you run the container with your own `docker run` command, copy these options from `compose.yaml`.
+
 To use your own TLS certificate, place its certificate chain at `/config/ssl/cert.pem` and its private key at `/config/ssl/cert.key`, then restart the container. A simple nginx reload does not copy newly supplied files into place.
 
 ## GPU support

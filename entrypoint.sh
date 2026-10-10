@@ -165,6 +165,8 @@ if [ "${AUTH_ENABLED_LOWER}" = "true" ]; then
     chown root:www-data "${PASSWD_FILE}"
     echo 'auth_basic "Brave Origin Authentication Required";' > /etc/nginx/conf.d/auth.conf
     echo "auth_basic_user_file ${PASSWD_FILE};" >> /etc/nginx/conf.d/auth.conf
+    # Each rejected login waits one second, which limits online password guessing.
+    echo 'auth_delay 1s;' >> /etc/nginx/conf.d/auth.conf
     echo "[nginx] [$(date -u +"%Y-%m-%d %H:%M:%S UTC")] Authentication mode: ENABLED"
 else
     echo "[nginx] [$(date -u +"%Y-%m-%d %H:%M:%S UTC")] Authentication mode: DISABLED"

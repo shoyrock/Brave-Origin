@@ -3,6 +3,8 @@
 ## Unreleased
 
 - Fixed startup on hosts without IPv6: the web proxy now listens on IPv4 only when the kernel has no IPv6 support instead of stopping the container.
+- Hardened the container: the Compose file and Unraid template drop all Linux capabilities except the six the container needs and limit it to 2048 processes; the image removes setuid bits and file capabilities from everything except Brave's sandbox helper, drops the unused GnuPG tools, and applies Debian security updates at build time.
+- Hardened the web proxy: forward-secret TLS cipher suites only, a one-second delay after each rejected login, and `X-Frame-Options` and `Referrer-Policy` headers on every response.
 
 ## 1.0.1-beta.2
 

@@ -28,7 +28,10 @@ http_code() {
     docker exec "$name" curl -k -s -o /dev/null -w '%{http_code}' "$@" https://127.0.0.1:8443/
 }
 docker volume create "$volume" >/dev/null
-docker run -d --name "$name" --shm-size=1g --security-opt seccomp=unconfined --security-opt no-new-privileges=true \
+# Same restrictions as compose.yaml and the Unraid template.
+run_opts=(--shm-size=1g --security-opt seccomp=unconfined --security-opt no-new-privileges=true
+    --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add SETGID --cap-add SETUID --cap-add KILL --pids-limit 2048)
+docker run -d --name "$name" "${run_opts[@]}" \
     -v "$volume:/config" -e PUID=99 -e PGID=100 -e AUTO_UPDATE=false \
     -e ENABLE_GPU=false -e AUTH_ENABLED=true -e AUTH_PASSWORD=smoke-test-only \
     -e DISPLAY_WIDTH=1280 -e DISPLAY_HEIGHT=720 -e "BRAVE_FLAGS=--user-agent=smoke'quoted" "$image" >/dev/null
@@ -39,7 +42,10 @@ docker exec "$name" python3 -m pip check
 [ "$(http_code -u brave:smoke-test-only -H 'Origin: https://127.0.0.1:8443')" = 200 ]
 [ "$(http_code -u brave:smoke-test-only -H 'Origin: https://untrusted.example')" = 403 ]
 [ "$(http_code -u brave:smoke-test-only -H 'Origin: null')" = 403 ]
-docker exec "$name" curl -ksI -u brave:smoke-test-only https://127.0.0.1:8443/ | python3 -c 'import sys; assert "frame-ancestors" in sys.stdin.read()'
+docker exec "$name" curl -ksI -u brave:smoke-test-only https://127.0.0.1:8443/ | python3 -c 'import sys; h=sys.stdin.read().lower(); assert "frame-ancestors" in h and "x-frame-options: sameorigin" in h and "referrer-policy: no-referrer" in h and "nosniff" in h'
+# Only Brave's sandbox helper may carry setuid; nothing carries file capabilities.
+docker exec "$name" sh -c 'test "$(find / -xdev -type f -perm /6000)" = /opt/brave.com/brave-origin/chrome-sandbox && test -z "$(getcap -r / 2>/dev/null)"'
+docker exec "$name" sh -c '! command -v gpg'
 [ "$(docker exec "$name" dpkg-query -W -f='${db:Status-Status}' brave-origin)" = installed ]
 docker exec "$name" sh -c '! pgrep -x Xwayland && ! pgrep -x Xvnc && ! pgrep -x openbox'
 docker exec "$name" sh -c 'test "$(awk "/^Uid:/ {print \$2}" /proc/$(cat /tmp/brave.pid)/status)" = 99'
