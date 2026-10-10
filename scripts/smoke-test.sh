@@ -11,8 +11,8 @@ cleanup() {
         docker logs --tail 60 "$name" 2>/dev/null || true
         docker exec "$name" tail -50 /config/state/session.log 2>/dev/null || true
     fi
-    docker rm -fv "$name" "${name}-conflict" "${name}-invalid" "${name}-updates" "${name}-storage" >/dev/null 2>&1 || true
-    docker volume rm "$volume" >/dev/null 2>&1 || true
+    docker rm -fv "$name" "${name}-conflict" "${name}-invalid" "${name}-updates" "${name}-storage" "${name}-unlocked" >/dev/null 2>&1 || true
+    docker volume rm "$volume" "${volume}-unlocked" >/dev/null 2>&1 || true
     rm -rf "$test_files"
     exit "$result"
 }
@@ -47,7 +47,12 @@ docker exec "$name" curl -ksI -u brave:smoke-test-only https://127.0.0.1:8443/ |
 docker exec "$name" sh -c 'test "$(find / -xdev -type f -perm /6000)" = /opt/brave.com/brave-origin/chrome-sandbox && test -z "$(getcap -r / 2>/dev/null)"'
 docker exec "$name" sh -c '! command -v gpg'
 [ "$(docker exec "$name" dpkg-query -W -f='${db:Status-Status}' brave-origin)" = installed ]
-docker exec "$name" sh -c '! pgrep -x Xwayland && ! pgrep -x Xvnc && ! pgrep -x openbox'
+docker exec "$name" sh -c '! pgrep -x Xwayland && ! pgrep -x Xvnc && ! pgrep -x openbox && ! command -v Xwayland && ! dpkg-query -W xwayland 2>/dev/null'
+docker exec "$name" sh -c 'test -x /usr/local/bin/labwc && test -x /usr/local/bin/labwc-browser && ldd /usr/local/bin/labwc /usr/local/bin/labwc-browser | { ! grep -q "not found"; }'
+# HSTS is off unless requested; the request limiter answers 429 past the burst.
+docker exec "$name" curl -ksI -u brave:smoke-test-only https://127.0.0.1:8443/ | python3 -c 'import sys; assert "strict-transport-security" not in sys.stdin.read().lower()'
+docker exec "$name" sh -c 'seq 1 80 | xargs -P 20 -I{} curl -k -s -o /dev/null -w "%{http_code}\n" -u brave:smoke-test-only https://127.0.0.1:8443/' | sort | uniq -c | python3 -c 'import sys; s=sys.stdin.read(); assert "200" in s and "429" in s, s'
+sleep 3
 docker exec "$name" sh -c 'test "$(awk "/^Uid:/ {print \$2}" /proc/$(cat /tmp/brave.pid)/status)" = 99'
 docker exec "$name" sh -c 'tr "\0" " " < /proc/$(cat /tmp/brave.pid)/cmdline' | python3 -c 'import sys; s=sys.stdin.read(); assert "--ozone-platform=wayland" in s and "--no-sandbox" not in s'
 docker exec "$name" runuser -u braveuser -- test ! -r /config/.passwd
@@ -111,6 +116,17 @@ docker exec -u braveuser "$name" sh -c 'printf "999.0.0\n" > /config/state/last-
 docker exec "$name" /usr/local/bin/profile-control.sh resume >/dev/null
 sleep 6
 docker exec "$name" sh -c '! pgrep -x brave && test "$(cat /config/state/status)" = DOWNGRADE_BLOCKED && test "$(cat /config/state/last-brave-version)" = 999.0.0'
+# The stock compositor build must run and honor window requests; HSTS must be opt-in.
+docker volume create "${volume}-unlocked" >/dev/null
+docker run -d --name "${name}-unlocked" "${run_opts[@]}" -v "${volume}-unlocked:/config" -e AUTO_UPDATE=false -e ENABLE_GPU=false \
+    -e AUTH_ENABLED=true -e AUTH_PASSWORD=smoke-test-only -e BROWSER_LOCK_MAXIMIZED=false -e HSTS_ENABLED=true "$image" >/dev/null
+for ((i=0; i<60; i++)); do docker exec "${name}-unlocked" bash /usr/local/bin/healthcheck.sh >/dev/null 2>&1 && break; sleep 1; done
+docker exec "${name}-unlocked" bash /usr/local/bin/healthcheck.sh
+docker exec "${name}-unlocked" sh -c 'pgrep -x labwc >/dev/null && ! pgrep -x labwc-browser'
+docker exec "${name}-unlocked" curl -ksI -u brave:smoke-test-only https://127.0.0.1:8443/ | python3 -c 'import sys; assert "strict-transport-security: max-age=31536000" in sys.stdin.read().lower()'
+docker cp tests/window-lock.py "${name}-unlocked:/tmp/test-window-lock.py"
+docker exec "${name}-unlocked" runuser -u braveuser -- env XDG_RUNTIME_DIR=/tmp/runtime-braveuser WAYLAND_DISPLAY=wayland-0 python3 /tmp/test-window-lock.py --unlocked
+docker rm -fv "${name}-unlocked" >/dev/null
 # Invalid root user configuration must fail closed.
 docker run -d --name "${name}-invalid" -e PUID=0 -e AUTO_UPDATE=false "$image" >/dev/null
 [ "$(docker wait "${name}-invalid")" != 0 ]
